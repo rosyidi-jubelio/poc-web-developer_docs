@@ -1,12 +1,8 @@
 # Builds the Docusaurus portal and deploys it to GitHub Pages.
 # (The file keeps the name of GitHub's Pages starter workflow, but nothing here uses Jekyll.)
 #
-# Setup, once:
-# 1. Settings > Pages > Build and deployment > Source: GitHub Actions.
-# 2. Settings > Secrets and variables > Actions:
-#    - Secret SPEC_REPO_TOKEN: a fine-grained token with read access to "Contents" of the
-#      repository that holds the OpenAPI spec.
-#    - Variable SPEC_REPOSITORY (optional): owner/name of that repository.
+# Setup, once: Settings > Pages > Build and deployment > Source: GitHub Actions.
+# The OpenAPI spec is the committed copy in openapi/openapi.yaml (see README, Spec).
 name: Deploy to GitHub Pages
 
 on:
@@ -31,24 +27,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Check spec access
-        env:
-          SPEC_REPO_TOKEN: ${{ secrets.SPEC_REPO_TOKEN }}
-        run: |
-          if [ -z "$SPEC_REPO_TOKEN" ]; then
-            echo "::error::Secret SPEC_REPO_TOKEN is not set. Add it in Settings > Secrets and variables > Actions (a fine-grained token with read access to Contents of the spec repository)."
-            exit 1
-          fi
-
-      - name: Checkout OpenAPI spec
-        uses: actions/checkout@v7
-        with:
-          repository: ${{ vars.SPEC_REPOSITORY || 'rosyidi-jubelio/app-store-technical-docs' }}
-          token: ${{ secrets.SPEC_REPO_TOKEN }}
-          path: _spec-source
-          sparse-checkout: docs/open-api/api/openapi.yaml
-          sparse-checkout-cone-mode: false
-
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -62,12 +40,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # `npm run build` syncs the spec, generates the API reference, runs the
+      # `npm run build` prepares the spec, generates the API reference, runs the
       # public-safety check and builds the site.
       - name: Build
         run: npm run build
         env:
-          OPENAPI_SPEC_PATH: _spec-source/docs/open-api/api/openapi.yaml
           SITE_URL: ${{ steps.pages.outputs.origin }}
           BASE_URL: ${{ steps.pages.outputs.base_path }}
 

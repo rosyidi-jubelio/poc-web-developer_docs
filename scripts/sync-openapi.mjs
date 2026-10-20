@@ -1,14 +1,20 @@
 #!/usr/bin/env node
-// Pulls the Open API spec from its source of truth into spec/openapi.yaml (gitignored),
-// replaces the server list with the public one, and refuses to continue if the spec
-// contains internal details. It also splits the spec into one file per module or
-// sub-module under spec/modules/, listed in spec/modules.json, so the API reference
-// mirrors the module structure (see scripts/api-modules.mjs).
+// Prepares the OpenAPI spec for the site.
 //
-// Source, first match wins:
-//   OPENAPI_SPEC_URL   http(s) URL to the raw YAML. GITHUB_TOKEN is sent if set.
-//   OPENAPI_SPEC_PATH  local file path.
-//   default            ../app-store-technical-docs/docs/open-api/api/openapi.yaml
+//   npm run sync:spec     (runs before start and build)
+//     Reads the committed copy openapi/openapi.yaml and writes everything derived from it to
+//     spec/ (gitignored): the full spec, one spec per module or sub-module under spec/modules/
+//     listed in spec/modules.json (see scripts/api-modules.mjs), and spec/testing-tool.json.
+//
+//   npm run update:spec   (run by hand when the source spec changes, then commit)
+//     Pulls the spec from its source of truth, makes it public-safe, and overwrites
+//     openapi/openapi.yaml. Source, first match wins:
+//       OPENAPI_SPEC_URL   http(s) URL to the raw YAML. GITHUB_TOKEN is sent if set.
+//       OPENAPI_SPEC_PATH  local file path.
+//       default            ../app-store-technical-docs/docs/open-api/api/openapi.yaml
+//
+// Both modes set the public server URL, strip details developers do not need, and refuse to
+// continue if the spec contains internal details.
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -19,11 +25,12 @@ import { MODULES, SUBMODULES, subLabel } from './api-modules.mjs';
 import { PUBLIC_API_BASE_URL } from './api-config.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const committedFile = path.join(root, 'openapi', 'openapi.yaml');
 const outFile = path.join(root, 'spec', 'openapi.yaml');
-const defaultPath = path.resolve(root, '..', 'app-store-technical-docs', 'docs', 'open-api', 'api', 'openapi.yaml');
-const publicServer = PUBLIC_API_BASE_URL;
+const upstreamPath = path.resolve(root, '..', 'app-store-technical-docs', 'docs', 'open-api', 'api', 'openapi.yaml');
+const update = process.argv.includes('--update');
 
-async function load() {
+async function loadUpstream() {
   const url = process.env.OPENAPI_SPEC_URL;
   if (url) {
     const headers = process.env.GITHUB_TOKEN
@@ -33,37 +40,38 @@ async function load() {
     if (!res.ok) throw new Error(`fetch ${url} failed: ${res.status} ${res.statusText}`);
     return { text: await res.text(), from: url };
   }
-  const file = process.env.OPENAPI_SPEC_PATH ? path.resolve(process.env.OPENAPI_SPEC_PATH) : defaultPath;
-  if (!existsSync(file)) {
-    if (existsSync(outFile) && !process.env.CI) {
-      console.warn(`[sync-openapi] ${file} not found, keeping the existing spec/openapi.yaml`);
-      return null;
-    }
-    throw new Error(`spec not found at ${file}. Set OPENAPI_SPEC_PATH or OPENAPI_SPEC_URL.`);
-  }
+  const file = process.env.OPENAPI_SPEC_PATH ? path.resolve(process.env.OPENAPI_SPEC_PATH) : upstreamPath;
+  if (!existsSync(file)) throw new Error(`spec not found at ${file}. Set OPENAPI_SPEC_PATH or OPENAPI_SPEC_URL.`);
   return { text: await readFile(file, 'utf8'), from: file };
 }
 
-const src = await load();
-if (src) {
-  const doc = YAML.parse(src.text);
-  doc.servers = [{ url: publicServer }];
-  toPublic(doc);
-  const out = YAML.stringify(doc, { lineWidth: 0 });
+const src = update
+  ? await loadUpstream()
+  : { text: await readFile(committedFile, 'utf8'), from: path.relative(root, committedFile) };
 
-  const { errors, warnings } = scan(out, 'spec/openapi.yaml');
-  warnings.forEach((w) => console.warn(`[sync-openapi] warn ${w}`));
-  if (errors.length) {
-    errors.forEach((e) => console.error(`[sync-openapi] error ${e}`));
-    console.error('[sync-openapi] the spec contains internal details; fix it at the source.');
-    process.exit(1);
-  }
+const doc = YAML.parse(src.text);
+doc.servers = [{ url: PUBLIC_API_BASE_URL }];
+toPublic(doc);
+dropUnpublished(doc);
+const out = YAML.stringify(doc, { lineWidth: 0 });
 
+const { errors, warnings } = scan(out, 'openapi/openapi.yaml');
+warnings.forEach((w) => console.warn(`[sync-openapi] warn ${w}`));
+if (errors.length) {
+  errors.forEach((e) => console.error(`[sync-openapi] error ${e}`));
+  console.error('[sync-openapi] the spec contains internal details; fix it at the source.');
+  process.exit(1);
+}
+
+if (update) {
+  await writeFile(committedFile, out);
+  console.log(`[sync-openapi] ${doc.info?.title} ${doc.info?.version} copied from ${src.from} to openapi/openapi.yaml`);
+} else {
   await rm(path.dirname(outFile), { recursive: true, force: true });
   await mkdir(path.join(path.dirname(outFile), 'modules'), { recursive: true });
   await writeFile(outFile, out);
   await writeModules(doc);
-  console.log(`[sync-openapi] ${doc.info?.title} ${doc.info?.version} synced from ${src.from}`);
+  console.log(`[sync-openapi] ${doc.info?.title} ${doc.info?.version} prepared from ${src.from}`);
 }
 
 // Splits the spec by module (tag) and sub-module (first path segment).
@@ -184,4 +192,36 @@ async function writeTestingTool(doc, groups) {
   }
   const tool = { baseUrl: doc.servers?.[0]?.url ?? '', operations };
   await writeFile(path.join(root, 'spec', 'testing-tool.json'), JSON.stringify(tool, null, 2) + '\n');
+}
+
+// Removes modules marked `publish: false` in scripts/api-modules.mjs, so they are not in the
+// committed copy either.
+function dropUnpublished(doc) {
+  const hidden = new Set(Object.entries(MODULES).filter(([, m]) => m.publish === false).map(([tag]) => tag));
+  for (const [p, item] of Object.entries(doc.paths ?? {})) {
+    const tags = Object.values(item).flatMap((op) => (op && typeof op === 'object' && op.tags) || []);
+    if (tags.length && tags.every((t) => hidden.has(t))) delete doc.paths[p];
+  }
+  if (doc.tags) doc.tags = doc.tags.filter((t) => !hidden.has(t.name));
+
+  // Drop schemas nothing points at any more.
+  const schemas = doc.components?.schemas ?? {};
+  const refsIn = (node, out = new Set()) => {
+    if (Array.isArray(node)) node.forEach((n) => refsIn(n, out));
+    else if (node && typeof node === 'object') {
+      if (typeof node.$ref === 'string') out.add(node.$ref.split('/').pop());
+      Object.values(node).forEach((v) => refsIn(v, out));
+    }
+    return out;
+  };
+  const { schemas: _omit, ...otherComponents } = doc.components ?? {};
+  const reachable = refsIn([doc.paths, otherComponents]);
+  for (const name of reachable) refsIn(schemas[name], reachable);
+  let grew = true;
+  while (grew) {
+    const before = reachable.size;
+    for (const name of [...reachable]) refsIn(schemas[name], reachable);
+    grew = reachable.size > before;
+  }
+  for (const name of Object.keys(schemas)) if (!reachable.has(name)) delete schemas[name];
 }

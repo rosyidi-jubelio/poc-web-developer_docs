@@ -18,7 +18,8 @@
     "prepare:api": "npm run sync:spec && npm run gen:api",
     "check:public": "node scripts/check-public.mjs",
     "prestart": "npm run prepare:api",
-    "prebuild": "npm run prepare:api && npm run check:public"
+    "prebuild": "npm run prepare:api && npm run check:public",
+    "update:spec": "node scripts/sync-openapi.mjs --update"
   },
   "dependencies": {
     "@docusaurus/core": "3.10.2",

@@ -1,0 +1,1486 @@
+openapi: 3.1.0
+info:
+  title: Jubelio Open API
+  version: 0.1.1-draft
+  description: |
+    Public API surface for third-party apps that connect to Jubelio merchant
+    data. Every call is authorized by a scoped access token obtained through
+    OAuth; a token only grants the scopes the merchant approved when
+    installing the app.
+
+    Status: **SKELETON**. A representative slice of endpoints is specced per
+    module (Auth, Merchant Info, Catalogue, WMS, Finance) to establish the
+    contract shape; Catalogue additionally covers a read+write pair (list,
+    archive) plus its category lookup, as a template for fleshing out the
+    other modules the same way.
+
+    ## Response format
+
+    Every resource endpoint (everything except the OAuth token endpoint)
+    wraps its payload in the same envelope:
+
+    ```json
+    {
+      "data": { },
+      "meta": null,
+      "error": null,
+      "request_id": "3fa4c1e0-...-c1d2e3f4a5b6"
+    }
+    ```
+
+    - `data` holds the actual payload: an object for a single resource, an
+      array for a list.
+    - `meta` carries paging info on list endpoints, `null` otherwise.
+    - `error` is always `null` on a successful response.
+    - `request_id` is a UUID generated fresh per request, also echoed in the
+      `X-Request-ID` response header. Include it when reporting a problem.
+
+    Paged list endpoints (those taking `page` and `page_size`) add the page they returned to `meta`:
+
+    ```json
+    {
+      "data": [ ],
+      "meta": { "page": 1, "page_size": 20 },
+      "error": null,
+      "request_id": "3fa4c1e0-...-c1d2e3f4a5b6"
+    }
+    ```
+
+    Lists do not report a total. To read every page, request the next `page` until a page
+    returns fewer rows than `page_size`.
+
+    On failure, `data` and `meta` are `null` and `error` carries the problem:
+
+    ```json
+    {
+      "data": null,
+      "meta": null,
+      "error": { "code": "endpoint_not_authorized", "message": "endpoint_not_authorized: this endpoint is not authorized for the current access token (requires scope: catalog.read)" },
+      "request_id": "3fa4c1e0-...-c1d2e3f4a5b6"
+    }
+    ```
+
+    - `code` is a lowercase, snake_case identifier. `endpoint_not_authorized` (403)
+      and `internal_error` (500) are stable; the rest of the catalog is not
+      yet fixed, so match on HTTP status first and treat `code` as a hint.
+    - `message` is human-readable, for debugging only.
+
+    The OAuth token endpoint is the one exception: it returns a plain OAuth
+    2.0 token response, not this envelope (see `POST /oauth/token`).
+servers:
+  - url: https://poc-open-api.qm-staging-k8s.jubelio.io/openapi/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+    description: OAuth token issuance for standalone apps
+  - name: Merchant Info
+    description: The installing merchant's own profile
+  - name: Catalogue
+    description: Product and inventory catalogue
+  - name: WMS
+    description: Warehouse, stock location, and inter-warehouse transfer capabilities
+  - name: Finance
+    description: Invoices and accounting capabilities
+  - name: Reference
+    description: Shared reference data
+paths:
+  /oauth/token:
+    post:
+      tags:
+        - Auth
+      summary: Exchange an authorization code for an access token
+      description: |
+        Called by the app's own backend after the merchant approves the
+        install and is redirected back with `code`. Also used with
+        `grant_type: refresh_token` to mint a new access token without
+        repeating the OAuth consent screen.
+
+        This endpoint is unauthenticated (no bearer token); the app
+        authenticates itself with `client_id` + `client_secret` in the body.
+      operationId: issueAccessToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+            examples:
+              authorization_code:
+                summary: Exchange a fresh authorization code
+                value:
+                  grant_type: authorization_code
+                  code: a1b2c3d4-...-single-use
+                  client_id: client_abc123
+                  client_secret: shhh
+                  redirect_uri: https://app.example.com/oauth/callback
+              refresh_token:
+                summary: Refresh an expired access token
+                value:
+                  grant_type: refresh_token
+                  refresh_token: eyJhbGciOi...
+                  client_id: client_abc123
+                  client_secret: shhh
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /merchant:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Merchant Info
+      summary: Get the installing merchant's profile
+      description: |
+        Returns the profile of the merchant tenant the current access token
+        was granted for. There is exactly one merchant per token; this
+        endpoint does not take a tenant identifier.
+      operationId: getMerchant
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/MerchantProfile"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /products:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Catalogue
+      summary: List products
+      operationId: listProducts
+      parameters:
+        - name: q
+          in: query
+          description: Search by product name
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Product"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /categories:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Catalogue
+      summary: List categories
+      description: |
+        Returns the merchant's full category tree as a flat list; use
+        `parent_id` to reconstruct hierarchy.
+      operationId: listCategories
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Category"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /products/archive:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    post:
+      tags:
+        - Catalogue
+      summary: Archive products
+      description: |
+        Marks one or more products as archived (soft-hidden from active
+        catalogue). `is_item_bundle: true` archives bundle products (matched
+        by product id); otherwise `item_ids` are matched at the SKU/variant
+        level.
+      operationId: archiveProducts
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - item_ids
+              properties:
+                item_ids:
+                  type: array
+                  items:
+                    type: integer
+                  minItems: 1
+                is_item_bundle:
+                  type: boolean
+                  default: false
+            example:
+              item_ids:
+                - 50
+                - 51
+              is_item_bundle: false
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ActionResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /products/price:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    post:
+      tags:
+        - Catalogue
+      summary: Update a product's default sell price
+      operationId: updateProductPrice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - item_id
+                - item_group_id
+                - sell_price
+              properties:
+                item_id:
+                  type: integer
+                item_group_id:
+                  type: integer
+                sell_price:
+                  type: number
+            example:
+              item_id: 50
+              item_group_id: 12
+              sell_price: 125000
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ActionResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /transfer-orders:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - WMS
+      summary: List outbound transfer orders
+      description: |
+        Stock transfer orders moving inventory from one warehouse location to
+        another, not yet finalized (unprinted).
+      operationId: listTransferOrders
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TransferOrder"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /locations:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - WMS
+      summary: List locations
+      operationId: listLocations
+      parameters:
+        - name: q
+          in: query
+          description: Search locations
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Location"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - WMS
+      summary: Create a location
+      description: |
+        Creates a warehouse location. `bins` is optional and creates the
+        floor, row, column, and bin layout in the same call.
+      operationId: createLocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocationCreate"
+            example:
+              location_name: Gudang Utama
+              location_code: GDG-01
+              address: Jl. Contoh No. 1
+              city: Surabaya
+              bins:
+                - floor: A
+                  row: "1"
+                  column: "1"
+                  bin: "01"
+                  max_qty: 100
+      responses:
+        "201":
+          description: Created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LocationDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /locations/{id}:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - WMS
+      summary: Get a location
+      operationId: getLocation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LocationDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      tags:
+        - WMS
+      summary: Update a location
+      description: Partial update. Send only the fields to change; at least one is required.
+      operationId: updateLocation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocationUpdate"
+            example:
+              location_name: Gudang Utama 2
+              is_active: true
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LocationDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags:
+        - WMS
+      summary: Delete a location
+      operationId: deleteLocation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LocationDeleted"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /invoices:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Finance
+      summary: List invoices
+      operationId: listInvoices
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Invoice"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /accounts:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Finance
+      summary: List accounts
+      description: Chart of accounts. `q` searches account name and code.
+      operationId: listAccounts
+      parameters:
+        - name: q
+          in: query
+          description: Search by account name or code
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AccountSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Finance
+      summary: Create an account
+      operationId: createAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountCreate"
+            example:
+              account_name: Kas Kecil
+              account_code: 1-1010
+              category_id: 1
+              type: cash
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AccountSaved"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /accounts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Finance
+      summary: Get an account
+      operationId: getAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Account"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - Finance
+      summary: Update an account
+      description: |
+        Omitted optional fields are left unchanged. `account_name` and
+        `account_code` are always required.
+      operationId: updateAccount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AccountUpdate"
+            example:
+              account_name: Kas Kecil
+              account_code: 1-1010
+              is_active: true
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/AccountSaved"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /regions:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Reference
+      summary: List regions
+      description: |
+        Indonesian administrative regions, one level per call. Reference data,
+        so no scope is required beyond a valid access token. `parent_id` is
+        required for every level except `province`, and is the `id` of the
+        level above.
+      operationId: listRegions
+      parameters:
+        - name: level
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - province
+              - city
+              - district
+              - subdistrict
+        - name: parent_id
+          in: query
+          description: Required unless level is province
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Region"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access token obtained from `POST /oauth/token`. Send it as
+        `Authorization: Bearer <token>` on every gateway request, together
+        with the `x-jbl-merchant-id` header naming the merchant the token was
+        issued for. A token
+        only authorizes the scopes the merchant approved at install; a call
+        outside those scopes gets `403` with `error.code: endpoint_not_authorized`.
+  parameters:
+    JblMerchantId:
+      name: x-jbl-merchant-id
+      in: header
+      required: true
+      description: |
+        The merchant this call acts on. Send the `merchant_id` that came back
+        with the access token from `POST /oauth/token`. A request without it
+        gets `400` with `missing_merchant`; a merchant other than the token's
+        gets `401`.
+      schema:
+        $ref: "#/components/schemas/MerchantId"
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: page_size
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  responses:
+    BadRequest:
+      description: |
+        The request body, query, or path failed validation, or the
+        `x-jbl-merchant-id` header is missing (`missing_merchant`).
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            data: null
+            meta: null
+            error:
+              code: bad_request
+              message: grant_type is required
+            request_id: 3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6
+    Unauthorized:
+      description: |
+        The access token is missing, malformed, expired, or has been
+        revoked (for example, the app was uninstalled), or `x-jbl-merchant-id`
+        names a merchant other than the one the token was issued for.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            data: null
+            meta: null
+            error:
+              code: unauthorized
+              message: token_expired
+            request_id: 3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6
+    NotFound:
+      description: The requested resource does not exist.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            data: null
+            meta: null
+            error:
+              code: location_not_found
+              message: location_not_found
+            request_id: 3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6
+    Forbidden:
+      description: |
+        The token is valid but was not granted the scope this endpoint
+        requires.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            data: null
+            meta: null
+            error:
+              code: endpoint_not_authorized
+              message: "endpoint_not_authorized: this endpoint is not authorized for the current access token (requires scope: catalog.read)"
+            request_id: 3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6
+  headers:
+    XRequestId:
+      description: |
+        Correlation ID for this request, a UUID generated fresh per request.
+        Matches the `request_id` field in the response body.
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Lowercase snake_case identifier.
+        message:
+          type: string
+          description: Human-readable detail, for debugging only.
+    Envelope:
+      type: object
+      title: Success envelope
+      required:
+        - data
+        - meta
+        - error
+        - request_id
+      properties:
+        data:
+          description: The payload. An object for a single resource, an array for a list.
+        meta:
+          type: "null"
+          description: null for non-paginated endpoints.
+        error:
+          type: "null"
+        request_id:
+          type: string
+          format: uuid
+          description: Also returned in the `X-Request-ID` response header.
+    PaginatedEnvelope:
+      type: object
+      title: Success envelope (paginated)
+      required:
+        - data
+        - meta
+        - error
+        - request_id
+      properties:
+        data:
+          type: array
+        meta:
+          type: object
+          required:
+            - page
+            - page_size
+          properties:
+            page:
+              type: integer
+            page_size:
+              type: integer
+        error:
+          type: "null"
+        request_id:
+          type: string
+          format: uuid
+          description: Also returned in the `X-Request-ID` response header.
+    ErrorEnvelope:
+      type: object
+      title: Error envelope
+      required:
+        - data
+        - meta
+        - error
+        - request_id
+      properties:
+        data:
+          type: "null"
+        meta:
+          type: "null"
+        error:
+          $ref: "#/components/schemas/Error"
+        request_id:
+          type: string
+          format: uuid
+          description: Also returned in the `X-Request-ID` response header.
+    TokenRequest:
+      type: object
+      required:
+        - grant_type
+        - client_id
+        - client_secret
+      properties:
+        grant_type:
+          type: string
+          enum:
+            - authorization_code
+            - refresh_token
+        code:
+          type: string
+          description: Required when grant_type is authorization_code. Single-use.
+        redirect_uri:
+          type: string
+          format: uri
+          description: Required when grant_type is authorization_code. Must match the URI used to start the flow.
+        refresh_token:
+          type: string
+          description: Required when grant_type is refresh_token.
+        client_id:
+          type: string
+        client_secret:
+          type: string
+    TokenResponse:
+      type: object
+      required:
+        - access_token
+        - token_type
+        - expires_in
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+          description: Present for standalone apps. Absent for embedded token flows.
+        token_type:
+          type: string
+          enum:
+            - Bearer
+        expires_in:
+          type: integer
+          description: Seconds until the access token expires.
+        merchant_id:
+          $ref: "#/components/schemas/MerchantId"
+        scopes:
+          type: array
+          items:
+            type: string
+          description: The scope codes the merchant granted.
+    MerchantId:
+      type: string
+      description: The merchant your app acts on. You receive it with the access token from `POST /oauth/token`.
+      example: 7K2QX9M4BDH3
+    MerchantProfile:
+      type: object
+      properties:
+        merchant_id:
+          $ref: "#/components/schemas/MerchantId"
+        company_name:
+          type: string
+    Product:
+      type: object
+      properties:
+        product_id:
+          type: integer
+        name:
+          type: string
+        sell_price:
+          type: number
+        thumbnail:
+          type: string
+          format: uri
+        variants:
+          type: array
+          items:
+            type: object
+            properties:
+              item_id:
+                type: integer
+              sku:
+                type: string
+              sell_price:
+                type: number
+              available_qty:
+                type: number
+    TransferOrder:
+      type: object
+      properties:
+        transfer_id:
+          type: integer
+        transfer_no:
+          type: string
+        source_location:
+          type: string
+        destination_location:
+          type: string
+        transaction_date:
+          type: string
+          format: date-time
+        is_printed:
+          type: boolean
+          description: Whether the transfer has been finalized.
+    Invoice:
+      type: object
+      properties:
+        invoice_id:
+          type: integer
+        invoice_no:
+          type: string
+        customer_name:
+          type: string
+        grand_total:
+          type: number
+        due:
+          type: number
+        due_date:
+          type: string
+          format: date
+        transaction_date:
+          type: string
+          format: date
+        created_at:
+          type: string
+          format: date-time
+    ActionResult:
+      type: object
+      description: Generic result for write endpoints that don't return a resource.
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+    Category:
+      type: object
+      properties:
+        category_id:
+          type: integer
+        category_name:
+          type: string
+        parent_id:
+          type:
+            - integer
+            - "null"
+        has_children:
+          type: boolean
+    AccountSummary:
+      type: object
+      properties:
+        account_id:
+          type: integer
+        account_code:
+          type: string
+        account_name:
+          type: string
+        category_name:
+          type: string
+        bank_id:
+          type:
+            - integer
+            - "null"
+        is_system_account:
+          type: boolean
+    Account:
+      type: object
+      properties:
+        account_id:
+          type: integer
+        account_code:
+          type: string
+        account_name:
+          type: string
+        category_id:
+          type: integer
+        category_name:
+          type:
+            - string
+            - "null"
+        type:
+          type:
+            - string
+            - "null"
+          enum:
+            - cash
+            - bank
+            - null
+        bank_id:
+          type:
+            - integer
+            - "null"
+        is_active:
+          type: boolean
+        is_system_account:
+          type: boolean
+    AccountCreate:
+      type: object
+      required:
+        - account_name
+        - account_code
+        - category_id
+      properties:
+        account_name:
+          type: string
+          maxLength: 100
+        account_code:
+          type: string
+          maxLength: 12
+        category_id:
+          type: integer
+        is_active:
+          type: boolean
+          default: true
+        type:
+          type:
+            - string
+            - "null"
+          enum:
+            - cash
+            - bank
+            - null
+        bank_id:
+          type:
+            - integer
+            - "null"
+    AccountUpdate:
+      type: object
+      required:
+        - account_name
+        - account_code
+      properties:
+        account_name:
+          type: string
+          maxLength: 100
+        account_code:
+          type: string
+          maxLength: 12
+        category_id:
+          type: integer
+        is_active:
+          type: boolean
+        type:
+          type:
+            - string
+            - "null"
+          enum:
+            - cash
+            - bank
+            - null
+        bank_id:
+          type:
+            - integer
+            - "null"
+    AccountSaved:
+      type: object
+      properties:
+        account_id:
+          type: integer
+    Location:
+      type: object
+      properties:
+        location_id:
+          type: integer
+        location_name:
+          type: string
+        location_code:
+          type:
+            - string
+            - "null"
+        address:
+          type: string
+        city:
+          type: string
+        province:
+          type: string
+        post_code:
+          type: string
+        area:
+          type: string
+        subdistrict:
+          type: string
+        province_id:
+          type:
+            - string
+            - "null"
+        city_id:
+          type:
+            - string
+            - "null"
+        district_id:
+          type:
+            - string
+            - "null"
+        subdistrict_id:
+          type:
+            - string
+            - "null"
+        coordinate:
+          type:
+            - string
+            - "null"
+        is_active:
+          type: boolean
+        is_warehouse:
+          type: boolean
+        default_warehouse_user:
+          type:
+            - integer
+            - "null"
+        location_group_id:
+          type:
+            - integer
+            - "null"
+        location_type:
+          type:
+            - string
+            - "null"
+        is_fbl:
+          type: boolean
+        is_tcb:
+          type: boolean
+        is_fbb:
+          type: boolean
+        is_o2o:
+          type: boolean
+        is_vmi:
+          type: boolean
+        is_sbs:
+          type: boolean
+        is_multi_origin:
+          type: boolean
+    LocationDetail:
+      allOf:
+        - $ref: "#/components/schemas/Location"
+        - type: object
+          properties:
+            phone:
+              type: string
+            email:
+              type: string
+            contact_name:
+              type:
+                - string
+                - "null"
+            bins:
+              type: array
+              items:
+                $ref: "#/components/schemas/Bin"
+    LocationFields:
+      type: object
+      properties:
+        location_name:
+          type: string
+        location_code:
+          type:
+            - string
+            - "null"
+        address:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+        contact_name:
+          type:
+            - string
+            - "null"
+        post_code:
+          type: string
+        province:
+          type: string
+        city:
+          type: string
+        area:
+          type: string
+        subdistrict:
+          type: string
+        province_id:
+          type:
+            - string
+            - "null"
+        city_id:
+          type:
+            - string
+            - "null"
+        district_id:
+          type:
+            - string
+            - "null"
+        subdistrict_id:
+          type:
+            - string
+            - "null"
+        coordinate:
+          type:
+            - string
+            - "null"
+        is_active:
+          type: boolean
+    LocationCreate:
+      allOf:
+        - $ref: "#/components/schemas/LocationFields"
+        - type: object
+          required:
+            - location_name
+          properties:
+            bins:
+              type: array
+              items:
+                $ref: "#/components/schemas/BinInput"
+    LocationUpdate:
+      allOf:
+        - $ref: "#/components/schemas/LocationFields"
+        - type: object
+          minProperties: 1
+    LocationDeleted:
+      type: object
+      properties:
+        location_id:
+          type: integer
+        deleted:
+          type: boolean
+    BinInput:
+      type: object
+      required:
+        - floor
+        - row
+        - column
+        - bin
+      properties:
+        floor:
+          type: string
+        row:
+          type: string
+        column:
+          type: string
+        bin:
+          type: string
+        max_qty:
+          type: number
+          minimum: 0
+          default: 0
+        acknowledge_stock:
+          type: boolean
+          default: true
+        is_inbound:
+          type: boolean
+          default: false
+        category:
+          type:
+            - string
+            - "null"
+          default: null
+    Bin:
+      allOf:
+        - $ref: "#/components/schemas/BinInput"
+        - type: object
+          properties:
+            is_default:
+              type: boolean
+            is_staging:
+              type: boolean
+    Region:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        parent_id:
+          type:
+            - string
+            - "null"
+          description: The id of the level above. null for provinces.

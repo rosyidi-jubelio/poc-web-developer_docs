@@ -8,8 +8,6 @@ Target domain: `developers.jubelio.com`.
 ## Requirements
 
 - Node.js 20 or newer
-- A checkout of the spec source repository next to this one, or a URL to the raw spec (see
-  [Spec sync](#spec-sync))
 
 ## Run and build
 
@@ -20,12 +18,13 @@ npm run build      # static site in build/
 npm run serve      # serve build/ locally
 ```
 
-`npm start` and `npm run build` first run `prepare:api`, which syncs the spec and regenerates
-the API reference. `npm run build` also runs `check:public`.
+`npm start` and `npm run build` first run `prepare:api`, which prepares the committed spec and
+regenerates the API reference. `npm run build` also runs `check:public`.
 
 | Script | What it does |
 | ------ | ------------ |
-| `sync:spec` | Copies or fetches the OpenAPI spec into `spec/openapi.yaml`. |
+| `update:spec` | Copies the spec from its source into `openapi/openapi.yaml`. Run by hand, then commit. |
+| `sync:spec` | Prepares `openapi/openapi.yaml` for the site, writing derived files to `spec/`. |
 | `gen:api` | Regenerates the API reference in `docs/api/`, one folder per module and sub-module. |
 | `prepare:api` | `sync:spec` then `gen:api`. |
 | `check:public` | Fails if hand-written content contains internal details or the em-dash character. |
@@ -36,15 +35,8 @@ the API reference. `npm run build` also runs `check:public`.
 `.github/workflows/jekyll-gh-pages.yml` builds the site and deploys it to GitHub Pages on every
 push to `main` (or by hand from the Actions tab). Despite the file name, it does not use Jekyll.
 
-One-time setup in the repository settings:
-
-1. **Pages**: Build and deployment, Source: **GitHub Actions**.
-2. **Secrets and variables > Actions**:
-   - Secret `SPEC_REPO_TOKEN`: a fine-grained personal access token with read access to
-     *Contents* of the repository that holds the OpenAPI spec. The workflow checks out only
-     `docs/open-api/api/openapi.yaml` from it.
-   - Variable `SPEC_REPOSITORY` (optional): `owner/name` of that repository, if it is not the
-     default in the workflow.
+One-time setup: **Settings > Pages > Build and deployment > Source: GitHub Actions**. No secrets
+are needed, since the build uses the committed spec in `openapi/openapi.yaml`.
 
 The workflow passes the Pages URL and path to the build (`SITE_URL`, `BASE_URL`), so the site
 works under `https://<owner>.github.io/<repo>/`. To try the same build locally:
@@ -57,50 +49,48 @@ BASE_URL=/poc-web-developer_docs npm run serve
 When the site moves to its own domain, add the domain in the Pages settings; `BASE_URL` then
 becomes `/` automatically.
 
-## Spec sync
+## Spec
 
-The OpenAPI spec is not copied into this repo by hand. Its source of truth is
-`docs/open-api/api/openapi.yaml` in the `app-store-technical-docs` repository.
-`scripts/sync-openapi.mjs` pulls it at build time into `spec/openapi.yaml`, and the generated
-pages go to `docs/api/`. Both folders are gitignored.
+The site is built from **`openapi/openapi.yaml`**, a committed, public-safe copy of the Open API
+spec. Its source of truth is `docs/open-api/api/openapi.yaml` in the `app-store-technical-docs`
+repository. Builds (local and CI) only read the committed copy, so they need no access to that
+repository.
 
-The script picks the first source that is set:
+When the source spec changes, refresh the copy and commit it:
+
+```bash
+npm run update:spec
+git add openapi/openapi.yaml
+git commit -m "docs: update OpenAPI spec"
+```
+
+`update:spec` reads the first source that is set:
 
 | Variable | Use |
 | -------- | --- |
-| `OPENAPI_SPEC_URL` | An http(s) URL to the raw YAML, for CI. If `GITHUB_TOKEN` is set it is sent as a bearer token, so a GitHub contents API URL for a private repo works. |
+| `OPENAPI_SPEC_URL` | An http(s) URL to the raw YAML. If `GITHUB_TOKEN` is set it is sent as a bearer token. |
 | `OPENAPI_SPEC_PATH` | A local file path. |
 | (default) | `../app-store-technical-docs/docs/open-api/api/openapi.yaml`, a sibling checkout. |
 
-Examples:
-
-```bash
-# sibling checkout (default)
-npm run sync:spec
-
-# another local path
-OPENAPI_SPEC_PATH=/path/to/openapi.yaml npm run sync:spec
-
-# CI, private GitHub repo
-OPENAPI_SPEC_URL="https://api.github.com/repos/<owner>/app-store-technical-docs/contents/docs/open-api/api/openapi.yaml?ref=main" \
-GITHUB_TOKEN=... npm run build
-```
-
-While syncing, the script:
+Before writing the copy, `scripts/sync-openapi.mjs`:
 
 1. Replaces `servers` with the public base URL from `PUBLIC_API_BASE_URL`
    (default in `scripts/api-config.mjs`, currently the staging host
    `https://poc-open-api.qm-staging-k8s.jubelio.io/openapi/v1` until production is ready; also
-   update the example in `docs/getting-started/first-api-call.md` when it changes). Other servers in the source spec, such as local, are not published.
+   update the example in `docs/getting-started/first-api-call.md` when it changes). Other
+   servers in the source spec, such as local, are not published.
 2. Removes details external developers do not need: every regex `pattern` on fields, and the
    format description of `merchant_id` (it is shown as a plain string).
-3. Scans the result with `scripts/public-safety.mjs` and stops the build if it finds internal
-   details (internal identifiers, internal headers, service or host names, storage names) or the
-   em-dash character. Fix those in the source spec, not here. The word "tenant" only produces a
-   warning, since the public term is "merchant".
+3. Removes modules marked `publish: false` in `scripts/api-modules.mjs`, and schemas only they
+   used.
+4. Scans the result with `scripts/public-safety.mjs` and stops if it finds internal details
+   (internal identifiers, internal headers, service or host names, storage names) or the em-dash
+   character. Fix those in the source spec, not here. The word "tenant" only produces a warning,
+   since the public term is "merchant".
 
-If the source is missing and a previous `spec/openapi.yaml` exists, the local build keeps the old
-copy with a warning. In CI (`CI` is set) a missing source fails the build.
+`sync:spec` (run by `start` and `build`) applies the same steps to the committed copy, then
+writes the derived files to `spec/` (gitignored) and the API reference goes to `docs/api/`
+(gitignored).
 
 ## API modules
 
@@ -140,8 +130,10 @@ docs/
 src/pages/api-testing.tsx  API testing tool (/api-testing)
   changelog.md
   api/                     Generated, gitignored
+openapi/
+  openapi.yaml             Committed public copy of the spec (npm run update:spec)
 scripts/
-  sync-openapi.mjs         Spec sync and module split
+  sync-openapi.mjs         Spec update, preparation and module split
   api-modules.mjs          Tag to module folder map
   api-categories.mjs       Sidebar labels for module folders
   check-public.mjs         Public-safety check for hand-written content
