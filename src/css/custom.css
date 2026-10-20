@@ -1,0 +1,287 @@
+/**
+ * Theme aligned with the Jubelio Dev Console (web-developer_console):
+ * Nunito Sans, primary #4b68ef, navy text #163a50, light blue app surface,
+ * white header with a soft shadow, filled primary for the active sidebar item.
+ * Light mode only, like the Dev Console.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Nunito+Sans:ital,opsz,wght@0,6..12,200..1000;1,6..12,200..1000&display=swap');
+
+:root {
+  /* Dev Console tokens */
+  --jbl-primary: #4b68ef;
+  --jbl-primary-hover: #8195f4;
+  --jbl-foreground: #163a50;
+  --jbl-muted-foreground: #a3a3a3;
+  --jbl-border: #eceff1;
+  --jbl-separator: #d4d5d6;
+  --jbl-surface: #f1f9ff;
+  --jbl-semantic: #e3f2fd;
+  --jbl-success: #4caf50;
+  --jbl-info: #2196f3;
+  --jbl-warning: #ffc107;
+  --jbl-danger: #df4d4d;
+  --jbl-radius: 0.625rem;
+
+  /* Infima mapping */
+  --ifm-color-primary: #4b68ef;
+  --ifm-color-primary-dark: #3255ed;
+  --ifm-color-primary-darker: #264bec;
+  --ifm-color-primary-darkest: #133bd5;
+  --ifm-color-primary-light: #647df1;
+  --ifm-color-primary-lighter: #7087f2;
+  --ifm-color-primary-lightest: #96a7f5;
+
+  --ifm-color-success: var(--jbl-success);
+  --ifm-color-info: var(--jbl-info);
+  --ifm-color-warning: var(--jbl-warning);
+  --ifm-color-danger: var(--jbl-danger);
+
+  --ifm-font-family-base: 'Nunito Sans', ui-sans-serif, system-ui, sans-serif;
+  --ifm-heading-font-family: var(--ifm-font-family-base);
+  --ifm-font-color-base: var(--jbl-foreground);
+  --ifm-heading-color: var(--jbl-foreground);
+  --ifm-menu-color: var(--jbl-foreground);
+  --ifm-toc-link-color: var(--jbl-foreground);
+  --ifm-color-content-secondary: #4d6474;
+
+  --ifm-background-color: #ffffff;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-color-emphasis-200: var(--jbl-border);
+  --ifm-color-emphasis-300: var(--jbl-separator);
+  --ifm-toc-border-color: var(--jbl-border);
+  --ifm-hr-border-color: var(--jbl-border);
+  --ifm-table-border-color: var(--jbl-border);
+  --ifm-table-stripe-background: #ffffff;
+  --ifm-table-head-background: var(--jbl-semantic);
+
+  --ifm-global-radius: 0.375rem;
+  --ifm-card-border-radius: var(--jbl-radius);
+  --ifm-code-border-radius: 0.25rem;
+  --ifm-code-font-size: 90%;
+  --ifm-code-background: #f3f5f7;
+
+  --ifm-navbar-height: 4.5rem;
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-navbar-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  --ifm-navbar-link-color: var(--jbl-foreground);
+  --ifm-menu-color-background-active: var(--jbl-semantic);
+  --ifm-menu-color-background-hover: #f3f4f6;
+  --ifm-menu-link-padding-vertical: 0.5rem;
+  --ifm-menu-link-padding-horizontal: 0.75rem;
+
+  --ifm-footer-background-color: var(--jbl-foreground);
+
+  --docusaurus-highlighted-code-line-bg: rgba(75, 104, 239, 0.12);
+}
+
+body {
+  background-color: #ffffff;
+}
+
+/* Navbar: white bar with the Dev Console shadow, logo then product name */
+.navbar {
+  box-shadow: var(--ifm-navbar-shadow);
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 997px) {
+  .navbar {
+    padding-left: 2.625rem;
+    padding-right: 2.625rem;
+  }
+}
+
+.navbar__logo {
+  height: 2rem;
+  margin-right: 0.625rem;
+}
+
+.navbar__title {
+  display: flex;
+  flex-direction: column;
+  font-weight: 800;
+  font-size: 1rem;
+  line-height: 1.15;
+  color: var(--jbl-foreground);
+}
+
+/* Second line of the product name, under "Jubelio App Store" */
+.navbar__title::after {
+  content: 'Developers';
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--jbl-primary);
+  letter-spacing: 0.02em;
+}
+
+.navbar__link {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.navbar__link--active {
+  color: var(--jbl-primary);
+}
+
+/* Sidebar: like the Dev Console nav, filled primary for the active page */
+.theme-doc-sidebar-container {
+  background: #ffffff;
+  border-right: 1px solid var(--jbl-border) !important;
+}
+
+.menu {
+  padding: 1.5rem 1rem !important;
+}
+
+.menu__link,
+.menu__caret {
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.menu__list-item:not(:first-child) {
+  margin-top: 0.25rem;
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  background-color: var(--jbl-primary);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.menu__link--active:not(.menu__link--sublist):hover {
+  background-color: var(--jbl-primary);
+  opacity: 0.9;
+}
+
+.menu__link--sublist.menu__link--active,
+.menu__list-item-collapsible--active {
+  background-color: var(--jbl-semantic);
+  color: var(--jbl-foreground);
+  font-weight: 600;
+}
+
+/* White page; the light blue Dev Console surface is used for accents only */
+.main-wrapper {
+  background-color: #ffffff;
+}
+
+.table-of-contents {
+  border-left: 1px solid var(--jbl-border);
+}
+
+.table-of-contents__link--active {
+  color: var(--jbl-primary);
+  font-weight: 700;
+}
+
+.theme-doc-markdown h1 {
+  font-weight: 800;
+}
+
+.theme-doc-markdown h2,
+.theme-doc-markdown h3 {
+  font-weight: 700;
+}
+
+.markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--jbl-separator);
+  border-radius: var(--jbl-radius);
+  overflow: hidden;
+  font-size: 0.9rem;
+}
+
+.markdown table th,
+.markdown table td {
+  border: none;
+  border-bottom: 1px solid var(--jbl-border);
+  padding: 0.75rem 1rem;
+}
+
+.markdown table tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown table tr,
+.markdown table tr:nth-child(2n) {
+  background: #ffffff;
+}
+
+.markdown table thead th {
+  background: var(--jbl-semantic);
+  color: var(--jbl-foreground);
+  font-weight: 700;
+  text-align: left;
+  border-bottom: 1px solid var(--jbl-separator);
+}
+
+/* Inline code: neutral chip so it reads on white and on the blue table header */
+.markdown code:not(pre code) {
+  background: #f3f5f7;
+  border: 1px solid var(--jbl-border);
+  color: var(--jbl-foreground);
+}
+
+/* Buttons follow the Dev Console button: lift on hover */
+.button {
+  border-radius: 0.375rem;
+  font-weight: 600;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+.button:hover {
+  transform: translateY(-2px);
+  opacity: 0.9;
+}
+
+/* API method badges in the Dev Console palette */
+.api-method > .menu__link::before {
+  border-radius: 0.25rem;
+}
+
+/* API pages: content uses the full width; code samples sit below it. Sending requests
+   happens on the API testing tool page (src/pages/api-testing.tsx). */
+.theme-api-markdown > .openapi-left-panel__container,
+.theme-api-markdown > .openapi-right-panel__container {
+  flex: 0 0 100%;
+  max-width: 100%;
+}
+
+.theme-api-markdown > .openapi-right-panel__container {
+  margin-top: 2.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--jbl-border);
+}
+
+.theme-api-markdown > .openapi-right-panel__container::before {
+  content: 'Code samples';
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--jbl-foreground);
+  margin-bottom: 1rem;
+}
+
+.jbl-try-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--jbl-surface);
+  border: 1px solid var(--jbl-semantic);
+  border-radius: var(--jbl-radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.jbl-try-card p {
+  margin: 0.15rem 0 0;
+  color: #4d6474;
+  font-size: 0.9rem;
+}

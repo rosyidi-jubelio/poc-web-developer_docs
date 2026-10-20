@@ -1,0 +1,164 @@
+/* Field tables for API parameters and bodies, modeled on the TikTok Shop partner docs:
+   gray header, top-level rows separated by lines, nested fields grouped on a light gray
+   block without inner lines, light gray code chips. */
+
+.wrapper {
+  border: 1px solid var(--jbl-border);
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  background: #ffffff;
+  margin: 0.5rem 0 1.25rem;
+}
+
+.wrapper .table {
+  display: table;
+  width: 100%;
+  min-width: 40rem;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.875rem;
+}
+
+.wrapper .table thead th {
+  background: #f7f8fa;
+  color: #6b7785;
+  font-weight: 400;
+  font-size: 0.8rem;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--jbl-border);
+  padding: 0.7rem 1rem;
+  white-space: nowrap;
+}
+
+.wrapper .table tr,
+.wrapper .table tr:nth-child(2n) {
+  background: #ffffff;
+  border: none;
+}
+
+.wrapper .table td {
+  border: none;
+  padding: 0.7rem 1rem;
+  vertical-align: top;
+}
+
+/* A line above each top-level field, none inside a nested group */
+.wrapper .table tbody tr.top + tr td,
+.wrapper .table tbody tr.nested + tr.top td {
+  border-top: 1px solid var(--jbl-border);
+}
+
+.wrapper .table tbody tr.nested + tr.nested td {
+  border-top: none;
+}
+
+.wrapper .table tr.nested {
+  background: #fafafa;
+}
+
+.nameCol {
+  width: 34%;
+}
+
+.typeCol {
+  width: 20%;
+}
+
+.wrapper .typeCol .chip {
+  white-space: normal;
+  overflow: visible;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+}
+
+.wrapper .chip {
+  display: inline-block;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #f5f5f5;
+  border: 1px solid #dcdcdc;
+  border-radius: 0.25rem;
+  color: #1f2329;
+  font-size: 0.82rem;
+  padding: 0.05rem 0.4rem;
+  line-height: 1.5;
+}
+
+.toggle {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #9aa0a6;
+  border-radius: 0.15rem;
+  background: #ffffff;
+  color: #5f6368;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0;
+  margin-right: 0.6rem;
+  cursor: pointer;
+}
+
+.toggle:hover {
+  border-color: var(--jbl-primary);
+  color: var(--jbl-primary);
+}
+
+.spacer {
+  width: 0.95rem;
+  margin-right: 0.6rem;
+  flex: none;
+}
+
+.required {
+  color: var(--jbl-danger);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.desc {
+  color: #4e5969;
+  overflow-wrap: anywhere;
+}
+
+.desc p {
+  margin: 0;
+}
+
+.desc p + p {
+  margin-top: 0.4rem;
+}
+
+.note {
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.note code {
+  margin-right: 0.25rem;
+}
+
+.empty {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.75rem 1rem;
+}
+
+.empty p {
+  margin: 0;
+}
