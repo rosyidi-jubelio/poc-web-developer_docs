@@ -31,6 +31,32 @@ the API reference. `npm run build` also runs `check:public`.
 | `check:public` | Fails if hand-written content contains internal details or the em-dash character. |
 | `typecheck` | Runs `tsc`. |
 
+## Deploy to GitHub Pages
+
+`.github/workflows/jekyll-gh-pages.yml` builds the site and deploys it to GitHub Pages on every
+push to `main` (or by hand from the Actions tab). Despite the file name, it does not use Jekyll.
+
+One-time setup in the repository settings:
+
+1. **Pages**: Build and deployment, Source: **GitHub Actions**.
+2. **Secrets and variables > Actions**:
+   - Secret `SPEC_REPO_TOKEN`: a fine-grained personal access token with read access to
+     *Contents* of the repository that holds the OpenAPI spec. The workflow checks out only
+     `docs/open-api/api/openapi.yaml` from it.
+   - Variable `SPEC_REPOSITORY` (optional): `owner/name` of that repository, if it is not the
+     default in the workflow.
+
+The workflow passes the Pages URL and path to the build (`SITE_URL`, `BASE_URL`), so the site
+works under `https://<owner>.github.io/<repo>/`. To try the same build locally:
+
+```bash
+BASE_URL=/poc-web-developer_docs npm run build
+BASE_URL=/poc-web-developer_docs npm run serve
+```
+
+When the site moves to its own domain, add the domain in the Pages settings; `BASE_URL` then
+becomes `/` automatically.
+
 ## Spec sync
 
 The OpenAPI spec is not copied into this repo by hand. Its source of truth is

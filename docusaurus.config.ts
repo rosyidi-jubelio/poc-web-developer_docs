@@ -22,14 +22,16 @@ const config: Config = {
     v4: true,
   },
 
-  url: 'https://developers.jubelio.com',
+  // SITE_URL and BASE_URL are set by the GitHub Pages workflow; defaults are for the final domain.
+  url: process.env.SITE_URL || 'https://developers.jubelio.com',
+  baseUrl: (process.env.BASE_URL || '/').replace(/\/?$/, '/'),
+  trailingSlash: false,
 
   customFields: {
     // Base URL the API testing tool sends requests to. Leave empty to call the spec's server
     // directly; set it to a proxy when the API does not allow calls from browsers.
     apiTestingBaseUrl: process.env.API_TESTING_BASE_URL ?? '',
   },
-  baseUrl: '/',
 
   onBrokenLinks: 'throw',
 

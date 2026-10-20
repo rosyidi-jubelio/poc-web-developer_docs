@@ -10,3 +10,12 @@ declare module '@theme/ApiExplorer/CodeSnippets' {
 }
 
 declare module 'postman-collection';
+
+declare module '@theme/ApiItem/hooks' {
+  export function useTypedDispatch(): (action: unknown) => void;
+  export function useTypedSelector<T>(selector: (state: any) => T): T;
+}
+
+declare module '@theme/ApiExplorer/Server/slice' {
+  export function setServer(value: string): unknown;
+}
