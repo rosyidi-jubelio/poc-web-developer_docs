@@ -51,11 +51,25 @@ curl "$JUBELIO_API_BASE/merchant" \
 
 ```json
 {
-  "data": { "merchant_id": "7K2QX9M4BDH3", "company_name": "Toko Contoh" },
+  "data": {
+    "merchant_id": "7K2QX9M4BDH3",
+    "company_name": "Toko Contoh",
+    "subscription": {
+      "status": "trial",
+      "plan": { "plan_id": 12, "name": "Pro" },
+      "billing_cycle": null,
+      "trial_ends_at": "2026-11-03T10:00:00Z",
+      "current_period_ends_at": "2026-11-03T10:00:00Z",
+      "grace_period_ends_at": null
+    }
+  },
   "meta": null,
   "error": null,
   "request_id": "3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6"
 }
 ```
+
+`subscription` is the merchant's subscription to your app, or `null` if your app is free. Use
+`status` to decide what the merchant can use, and show a reminder to pay when it is `over_due`.
 
 Read [Authentication](../authentication.md) to learn how to keep the token fresh.

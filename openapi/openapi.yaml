@@ -75,7 +75,7 @@ tags:
   - name: Auth
     description: OAuth token issuance for standalone apps
   - name: Merchant Info
-    description: The installing merchant's own profile
+    description: The installing merchant's own profile and its subscription to the calling app
   - name: Catalogue
     description: Product and inventory catalogue
   - name: WMS
@@ -139,11 +139,20 @@ paths:
     get:
       tags:
         - Merchant Info
-      summary: Get the installing merchant's profile
+      summary: Get the installing merchant's profile and subscription
       description: |
-        Returns the profile of the merchant tenant the current access token
-        was granted for. There is exactly one merchant per token; this
-        endpoint does not take a tenant identifier.
+        Returns the profile of the merchant the current access token was
+        granted for, together with that merchant's subscription to the
+        calling app. There is exactly one merchant per token; this endpoint
+        takes no merchant identifier beyond the header, and it needs no scope.
+
+        The subscription is always the calling app's own. An app cannot read
+        what the merchant pays for any other app. `subscription` is `null`
+        for a free app.
+
+        A subscription that is `expired` blocks the app's tokens, so in
+        practice an app reads `trial`, `active` or `over_due`. Use
+        `over_due` to ask the merchant to pay before `grace_period_ends_at`.
       operationId: getMerchant
       responses:
         "200":
@@ -162,8 +171,25 @@ paths:
                         $ref: "#/components/schemas/MerchantProfile"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: |
+            Merchant info is temporarily unavailable. Retry later. The endpoint
+            fails rather than answering without a subscription, because a
+            `null` subscription means a free app.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                data: null
+                meta: null
+                error:
+                  code: app_store_unavailable
+                  message: app_store_unavailable
+                request_id: 3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6
   /products:
     parameters:
       - $ref: "#/components/parameters/JblMerchantId"
@@ -1072,6 +1098,71 @@ components:
           $ref: "#/components/schemas/MerchantId"
         company_name:
           type: string
+          description: The merchant's company name as recorded when it installed the app.
+        subscription:
+          oneOf:
+            - $ref: "#/components/schemas/AppSubscription"
+            - type: "null"
+          description: The merchant's subscription to the calling app. `null` for a free app.
+    AppSubscription:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - trial
+            - active
+            - over_due
+            - expired
+          description: |
+            - `trial`: inside the 7 day trial that started at install.
+            - `active`: a paid period is running.
+            - `over_due`: a paid period ended without renewal, inside the 7 day grace period.
+            - `expired`: the trial ended unpaid, or the grace period ran out.
+        plan:
+          type: object
+          description: The plan the merchant is on, as defined by the developer in Dev Console.
+          properties:
+            plan_id:
+              type: integer
+            name:
+              type: string
+        billing_cycle:
+          type:
+            - string
+            - "null"
+          enum:
+            - monthly
+            - yearly
+            - null
+          description: "`null` until the merchant pays for a first period."
+        trial_ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: End of the trial. `null` when the merchant never had one.
+        current_period_ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: End of the current trial or paid period.
+        grace_period_ends_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+          description: Last moment the app keeps access while `over_due`. `null` in any other status.
+      example:
+        status: over_due
+        plan:
+          plan_id: 12
+          name: Pro
+        billing_cycle: monthly
+        trial_ends_at: 2026-10-20T10:00:00Z
+        current_period_ends_at: 2026-11-01T00:00:00Z
+        grace_period_ends_at: 2026-11-08T00:00:00Z
     Product:
       type: object
       properties:
