@@ -96,14 +96,19 @@ writes the derived files to `spec/` (gitignored) and the API reference goes to `
 
 The API reference mirrors the Open API modules. `scripts/api-modules.mjs` maps each spec tag to
 a module folder. Modules that are not `flat` are split into sub-modules by the first path segment,
-so `/products` and `/products/archive` both land in `catalogue/products`:
+so `/transfer-orders` and `/transfer-orders/{id}` both land in `wms/transfer-orders`. A tag can
+also set its sub-module with `sub`, which is how the several Catalogue tags (all under
+`/catalog/...`) get their own folders:
 
 ```
 docs/api/
   auth/                    Authentication
   merchant/                Merchant
   catalogue/products/      Catalogue > Products
+  catalogue/prices/        Catalogue > Prices
   catalogue/categories/    Catalogue > Categories
+  catalogue/category-mappings/   Catalogue > Category mappings
+  catalogue/channel-categories/  Catalogue > Channel categories
   wms/locations/           WMS > Locations
   wms/transfer-orders/     WMS > Transfer orders
   finance/invoices/        Finance > Invoices

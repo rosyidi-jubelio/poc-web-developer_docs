@@ -74,7 +74,7 @@ if (update) {
   console.log(`[sync-openapi] ${doc.info?.title} ${doc.info?.version} prepared from ${src.from}`);
 }
 
-// Splits the spec by module (tag) and sub-module (first path segment).
+// Splits the spec by module (tag) and sub-module (`sub` of the tag, else first path segment).
 async function writeModules(doc) {
   const groups = new Map();
   for (const [p, item] of Object.entries(doc.paths ?? {})) {
@@ -86,7 +86,7 @@ async function writeModules(doc) {
     const mod = MODULES[tag];
     if (!mod) throw new Error(`${p}: tag "${tag}" is not mapped in scripts/api-modules.mjs`);
     if (mod.publish === false) continue;
-    const seg = p.split('/')[1];
+    const seg = mod.sub ?? p.split('/')[1];
     const key = mod.flat ? mod.dir : `${mod.dir}/${seg}`;
     if (!groups.has(key)) {
       groups.set(key, {

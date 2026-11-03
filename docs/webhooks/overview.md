@@ -24,8 +24,9 @@ sequenceDiagram
 
 ## Set up
 
-1. **Callback URL.** Set it in Dev Console. It must be HTTPS. You can change it at any time without a
-   new app version.
+1. **Callback URL.** Set it in Dev Console. It must be HTTPS, with no username or password in the
+   URL, and it must resolve to a public address. Jubelio does not send to private, loopback or
+   link-local addresses. You can change it at any time without a new app version.
 2. **Secret.** Optional. If you set one, Jubelio sends it in the `X-Jubelio-Secret` header so you can
    check the request came from us.
 3. **Events.** Pick them in your app version. Merchants approve the events together with the version,
@@ -111,8 +112,10 @@ own queue.
 | Your response | What Jubelio does |
 | --- | --- |
 | `2xx` | Done. |
-| Timeout, connection error, `5xx`, `408`, `429` | Retries (see below). |
+| Timeout, connection or TLS error, `5xx`, `408`, `429` | Retries (see below). |
 | Any other status, including redirects | Gives up on this event. |
+
+A callback URL that is not allowed (see Set up) is not retried either.
 
 Jubelio does not follow redirects. Point your callback URL at the final address.
 

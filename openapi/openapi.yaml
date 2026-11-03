@@ -1,18 +1,18 @@
 openapi: 3.1.0
 info:
   title: Jubelio Open API
-  version: 0.1.1-draft
+  version: 0.2.0-draft
   description: |
     Public API surface for third-party apps that connect to Jubelio merchant
     data. Every call is authorized by a scoped access token obtained through
     OAuth; a token only grants the scopes the merchant approved when
     installing the app.
 
-    Status: **SKELETON**. A representative slice of endpoints is specced per
-    module (Auth, Merchant Info, Catalogue, WMS, Finance) to establish the
-    contract shape; Catalogue additionally covers a read+write pair (list,
-    archive) plus its category lookup, as a template for fleshing out the
-    other modules the same way.
+    Status: **IN PROGRESS**, filled in per module. The Catalog module
+    (Categories, Category Mappings, Channel Categories, Products, Prices) is
+    complete. Auth, Merchant Info, Orders, WMS, Finance and Reference are still
+    a representative slice that establishes the contract shape.
+    Operations marked `x-available: false` are documented but not enabled yet.
 
     ## Response format
 
@@ -55,15 +55,24 @@ info:
     {
       "data": null,
       "meta": null,
-      "error": { "code": "endpoint_not_authorized", "message": "endpoint_not_authorized: this endpoint is not authorized for the current access token (requires scope: catalog.read)" },
+      "error": { "code": "endpoint_not_authorized", "message": "endpoint_not_authorized: this endpoint is not authorized for the current access token (requires scope: product.read)" },
       "request_id": "3fa4c1e0-...-c1d2e3f4a5b6"
     }
     ```
 
     - `code` is a lowercase, snake_case identifier. `endpoint_not_authorized` (403)
-      and `internal_error` (500) are stable; the rest of the catalog is not
-      yet fixed, so match on HTTP status first and treat `code` as a hint.
-    - `message` is human-readable, for debugging only.
+      and `internal_error` (500) are stable. Catalog endpoints document their
+      codes per response and use `validation_error` for every request
+      validation failure. Outside Catalog the codes are not yet fixed, so match
+      on HTTP status first and treat `code` as a hint.
+    - `message` is human-readable, for debugging only. `internal_error` always
+      carries a generic message.
+
+    ## Scopes
+
+    Each operation lists its required scope in `x-scope`. Calling an operation
+    with a token that lacks the scope returns `403 endpoint_not_authorized`.
+    Operations without `x-scope` only need a valid token.
 
     The OAuth token endpoint is the one exception: it returns a plain OAuth
     2.0 token response, not this envelope (see `POST /oauth/token`).
@@ -76,8 +85,16 @@ tags:
     description: OAuth token issuance for standalone apps
   - name: Merchant Info
     description: The installing merchant's own profile and its subscription to the calling app
-  - name: Catalogue
-    description: Product and inventory catalogue
+  - name: Categories
+    description: "Catalog: Jubelio product categories (the merchant's category tree)"
+  - name: Category Mappings
+    description: "Catalog: mapping between Jubelio categories and marketplace categories, including attribute and variation mappings"
+  - name: Channel Categories
+    description: "Catalog: marketplace category master data (the same for all merchants)"
+  - name: Products
+    description: "Catalog: products, images and SKUs"
+  - name: Prices
+    description: "Catalog: online/offline prices, promotions, sync failures and price adjustments"
   - name: WMS
     description: Warehouse, stock location, and inter-warehouse transfer capabilities
   - name: Finance
@@ -190,22 +207,21 @@ paths:
                   code: app_store_unavailable
                   message: app_store_unavailable
                 request_id: 3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6
-  /products:
+  /catalog/categories:
     parameters:
       - $ref: "#/components/parameters/JblMerchantId"
     get:
       tags:
-        - Catalogue
-      summary: List products
-      operationId: listProducts
+        - Categories
+      summary: List categories
+      description: |
+        Paginated list of the merchant's categories, sorted by `full_name` ascending.
+      operationId: listCategories
+      x-scope: category.read
       parameters:
-        - name: q
-          in: query
-          description: Search by product name
-          schema:
-            type: string
         - $ref: "#/components/parameters/Page"
         - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
       responses:
         "200":
           description: OK
@@ -222,22 +238,192 @@ paths:
                       data:
                         type: array
                         items:
-                          $ref: "#/components/schemas/Product"
+                          $ref: "#/components/schemas/CategorySummary"
+        "400":
+          $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /categories:
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags:
+        - Categories
+      summary: Create category
+      description: |
+        Creates a category. Only available for merchants with custom categories
+        enabled; otherwise returns `409 custom_category_disabled`.
+
+        The response does not include the new category id. Use
+        `GET /catalog/categories?q=<name>` to find it.
+      operationId: createCategory
+      x-scope: category.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "201":
+          description: Category created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ActionResult"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/CustomCategoryDisabled"
+        "422":
+          description: |
+            Parent category does not exist.
+            Error code: `parent_category_not_found`.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                data: null
+                meta: null
+                error:
+                  code: parent_category_not_found
+                  message: parent_category_not_found
+                request_id: 3f6c2a5e-8f0e-4b8e-9a51-2f0c7d1e4b11
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/{category_id}:
     parameters:
       - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/CategoryId"
     get:
       tags:
-        - Catalogue
-      summary: List categories
+        - Categories
+      summary: Get category
+      operationId: getCategory
+      x-scope: category.read
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Category"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Categories
+      summary: Update category
       description: |
-        Returns the merchant's full category tree as a flat list; use
-        `parent_id` to reconstruct hierarchy.
-      operationId: listCategories
+        Full replace: both `category_name` and `parent_id` are required.
+        Only available for merchants with custom categories enabled.
+      operationId: updateCategory
+      x-scope: category.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "200":
+          description: Category updated
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Category"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryNotFound"
+        "409":
+          $ref: "#/components/responses/CustomCategoryDisabled"
+        "422":
+          description: |
+            Invalid parent.
+            Error codes:
+            - `parent_category_not_found`: parent does not exist (`0` = root, always valid)
+            - `invalid_parent_category`: parent is the category itself or one of its descendants
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                data: null
+                meta: null
+                error:
+                  code: invalid_parent_category
+                  message: invalid_parent_category
+                request_id: 3f6c2a5e-8f0e-4b8e-9a51-2f0c7d1e4b11
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/{category_id}/children:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - name: category_id
+        in: path
+        required: true
+        description: Jubelio category id. Use `0` to list root categories.
+        schema:
+          type: integer
+          minimum: 0
+    get:
+      tags:
+        - Categories
+      summary: List direct child categories
+      description: |
+        Direct children of the category, sorted by name. Not paginated (`meta` is null).
+        `GET /catalog/categories/0/children` returns the root categories (start of the tree).
+      operationId: listCategoryChildren
+      x-scope: category.read
       responses:
         "200":
           description: OK
@@ -255,23 +441,700 @@ paths:
                         type: array
                         items:
                           $ref: "#/components/schemas/Category"
+        "400":
+          $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /products/archive:
+        "404":
+          $ref: "#/components/responses/CategoryNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/{category_id}/ancestors:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/CategoryId"
+    get:
+      tags:
+        - Categories
+      summary: Get category path
+      description: |
+        Path from the root category down to this category (inclusive), for
+        breadcrumbs. Example: `[Fashion, Pria, Kaos]`. Not paginated.
+      operationId: listCategoryAncestors
+      x-scope: category.read
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Category"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/mappings:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Category Mappings
+      summary: List category mappings
+      description: |
+        Leaf categories with their marketplace mappings, sorted by `full_name`.
+        `mappings` only contains channels that are mapped and enabled for the
+        Open API (see `ChannelId`).
+      operationId: listCategoryMappings
+      x-scope: category.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/CategoryMappingItem"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags:
+        - Category Mappings
+      summary: Map category to a marketplace category
+      description: |
+        Creates or replaces the mapping of a category for one channel (idempotent):
+        send `category_id`, `channel_id` and `channel_category_id` in the body.
+
+        **Warning:** saving a mapping resets the attribute and variation mappings
+        of this category for this channel to their defaults (required attributes only).
+        Any custom attribute or variation mapping for this channel is lost.
+
+        Only available for merchants with custom categories enabled.
+      operationId: saveCategoryMapping
+      x-scope: category.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryMappingInput"
+      responses:
+        "200":
+          description: Mapping saved
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/CategoryMapping"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryNotFound"
+        "409":
+          $ref: "#/components/responses/CustomCategoryDisabled"
+        "422":
+          description: |
+            Marketplace category does not exist for this channel.
+            Error code: `channel_category_not_found`.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+              example:
+                data: null
+                meta: null
+                error:
+                  code: channel_category_not_found
+                  message: channel_category_not_found
+                request_id: 3f6c2a5e-8f0e-4b8e-9a51-2f0c7d1e4b11
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/{category_id}/mappings/{channel_id}/attributes:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/CategoryId"
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags:
+        - Category Mappings
+      summary: List attribute mappings
+      description: Jubelio attributes of the category and the marketplace attribute each one maps to on this channel.
+      operationId: listAttributeMappings
+      x-scope: category.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AttributeMapping"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryMappingNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/{category_id}/mappings/{channel_id}/attribute-options:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/CategoryId"
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags:
+        - Category Mappings
+      summary: List marketplace attribute options
+      description: Attributes available on the mapped marketplace category. Not paginated.
+      operationId: listAttributeOptions
+      x-scope: category.read
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AttributeOption"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryMappingNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/{category_id}/mappings/{channel_id}/variations:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/CategoryId"
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags:
+        - Category Mappings
+      summary: List variation mappings
+      description: Jubelio variations of the category and the marketplace variation each one maps to on this channel.
+      operationId: listVariationMappings
+      x-scope: category.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VariationMapping"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryMappingNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/{category_id}/mappings/{channel_id}/variation-options:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/CategoryId"
+      - $ref: "#/components/parameters/ChannelId"
+    get:
+      tags:
+        - Category Mappings
+      summary: List marketplace variation options
+      description: Variations available on the mapped marketplace category. Not paginated.
+      operationId: listVariationOptions
+      x-scope: category.read
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VariationOption"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/CategoryMappingNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/categories/channel-categories/{channel_id}/{channel_category_id}:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/ChannelId"
+      - name: channel_category_id
+        in: path
+        required: true
+        description: Marketplace category id (string, owned by the marketplace). Use `0` to list the channel's root categories.
+        schema:
+          type: string
+          example: "62544801"
+    get:
+      tags:
+        - Channel Categories
+      summary: Get marketplace category with its path and children
+      description: |
+        Marketplace category master data, the same for all merchants. Returns the
+        category, its ancestors (root down to the direct parent) and its direct children.
+        Requires a valid token but no scope.
+
+        `GET /catalog/categories/channel-categories/{channel_id}/0` returns the channel's root categories
+        in `children` (start of the tree), with `category: null` and `ancestors: []`.
+      operationId: getChannelCategory
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ChannelCategoryDetail"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: |
+            Marketplace category not found for this channel.
+            Error code: `channel_category_not_found`.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/products:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Products
+      summary: List products
+      description: |
+        Paginated list of products, newest change first (`last_modified` descending).
+        `status` selects the product list:
+
+        | status | products |
+        |---|---|
+        | `active` | catalog (master) products, not archived |
+        | `need_review` | products pulled from a channel that are not part of the catalog yet |
+        | `in_review` | products currently in review |
+        | `archived` | archived products |
+      operationId: listProducts
+      x-scope: product.read
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - active
+              - need_review
+              - in_review
+              - archived
+            default: active
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: category_id
+          in: query
+          description: Only products in this Jubelio category
+          schema:
+            type: integer
+            minimum: 1
+        - name: is_bundle
+          in: query
+          description: Only bundle (`true`) or non-bundle (`false`) products
+          schema:
+            type: boolean
+        - name: last_modified_since
+          in: query
+          description: Only products changed on or after this date (ISO 8601). Useful for periodic sync.
+          schema:
+            type: string
+            format: date
+            example: 2026-10-01
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ProductSummary"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags:
+        - Products
+      summary: Create product
+      description: |
+        Creates a product with its images and SKUs. `sell_price` (product and SKUs)
+        is the initial price only; prices are changed later through the price API.
+      operationId: createProduct
+      x-scope: product.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductCreateInput"
+      responses:
+        "201":
+          description: Product created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductEnvelope"
+        "400":
+          $ref: "#/components/responses/ProductRejected"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/BarcodeTaken"
+        "422":
+          description: |
+            Error codes:
+            - `category_not_found`: `category_id` does not exist
+            - `product_validation_failed`: business validation failed (duplicate product name or SKU code, invalid variations, bundle composition). `message` carries the reason.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/products/{product_id}:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/ProductId"
+    get:
+      tags:
+        - Products
+      summary: Get product
+      operationId: getProduct
+      x-scope: product.read
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductEnvelope"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ProductNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    put:
+      tags:
+        - Products
+      summary: Update product info
+      description: |
+        Partial update of product-level fields; send at least one field. Images and
+        SKUs are not changed (use `/images` and `/skus`). The price cannot be changed
+        here; use the price API.
+
+        Note: SKU `variation_values` that are invalid in stored data (item without a
+        value) are cleaned up by any product update.
+      operationId: updateProduct
+      x-scope: product.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdateInput"
+      responses:
+        "200":
+          description: Product updated
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductEnvelope"
+        "400":
+          $ref: "#/components/responses/ProductRejected"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ProductNotFound"
+        "409":
+          $ref: "#/components/responses/BarcodeTaken"
+        "422":
+          description: |
+            Error codes: `category_not_found`, `product_validation_failed`.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/products/{product_id}/images:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/ProductId"
+    put:
+      tags:
+        - Products
+      summary: Replace product images
+      description: |
+        Replaces the whole set of product images (1-9), in the given order. Images with
+        a URL that already exists keep their id; images not in the list are removed.
+        SKU images are not changed.
+
+        Note: a product with a single SKU that has no images of its own gets a copy of
+        the product images on that SKU.
+      operationId: replaceProductImages
+      x-scope: product.image.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductImagesInput"
+      responses:
+        "200":
+          description: Images replaced
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductEnvelope"
+        "400":
+          $ref: "#/components/responses/ProductRejected"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ProductNotFound"
+        "422":
+          $ref: "#/components/responses/ProductValidationFailed"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/products/{product_id}/skus:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/ProductId"
+    put:
+      tags:
+        - Products
+      summary: Update product SKUs
+      description: |
+        Sends the full list of SKUs:
+        - existing SKUs (with `sku_id`) **must all be sent**: SKUs cannot be removed.
+          Archived SKUs may be left out; they are kept.
+        - new SKUs are sent without `sku_id`; their `sell_price` is the initial price.
+        - `sell_price` of existing SKUs is ignored; use the price API.
+        - for an existing SKU, sending `images` replaces that SKU's images.
+      operationId: updateProductSkus
+      x-scope: product.sku.write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductSkusInput"
+      responses:
+        "200":
+          description: SKUs saved
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductEnvelope"
+        "400":
+          $ref: "#/components/responses/ProductRejected"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/ProductNotFound"
+        "409":
+          $ref: "#/components/responses/BarcodeTaken"
+        "422":
+          description: |
+            Error codes:
+            - `sku_cannot_be_removed`: an existing, non-archived SKU is missing from the list
+            - `sku_not_found`: a `sku_id` does not belong to this product
+            - `product_validation_failed`: business validation failed. `message` carries the reason.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/products/archive:
     parameters:
       - $ref: "#/components/parameters/JblMerchantId"
     post:
       tags:
-        - Catalogue
-      summary: Archive products
-      description: |
-        Marks one or more products as archived (soft-hidden from active
-        catalogue). `is_item_bundle: true` archives bundle products (matched
-        by product id); otherwise `item_ids` are matched at the SKU/variant
-        level.
-      operationId: archiveProducts
+        - Products
+      summary: Archive SKUs
+      description: Archives the given SKUs and removes them from connected channels.
+      operationId: archiveSkus
+      x-scope: product.write
       requestBody:
         required: true
         content:
@@ -279,24 +1142,22 @@ paths:
             schema:
               type: object
               required:
-                - item_ids
+                - sku_ids
+              additionalProperties: false
               properties:
-                item_ids:
+                sku_ids:
                   type: array
+                  minItems: 1
+                  uniqueItems: true
                   items:
                     type: integer
-                  minItems: 1
-                is_item_bundle:
-                  type: boolean
-                  default: false
-            example:
-              item_ids:
-                - 50
-                - 51
-              is_item_bundle: false
+                    minimum: 1
+                  example:
+                    - 5001
+                    - 5002
       responses:
         "200":
-          description: OK
+          description: SKUs archived
           headers:
             X-Request-ID:
               $ref: "#/components/headers/XRequestId"
@@ -310,40 +1171,442 @@ paths:
                       data:
                         $ref: "#/components/schemas/ActionResult"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /products/price:
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/images:
     parameters:
       - $ref: "#/components/parameters/JblMerchantId"
     post:
       tags:
-        - Catalogue
-      summary: Update a product's default sell price
-      operationId: updateProductPrice
+        - Products
+      summary: Upload image
+      description: |
+        Uploads one image file and returns its URL and thumbnail. Use the URL in
+        `POST /catalog/products` and `PUT /catalog/products/{product_id}/images`.
+
+        Send `multipart/form-data`. The file name (with an image extension) must be
+        sent in `name`. Maximum request size is 20 MB.
+      operationId: uploadImage
+      x-scope: product.image.write
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+                - name
+              additionalProperties: false
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file
+                name:
+                  type: string
+                  maxLength: 200
+                  example: kaos-hitam.jpg
+                  description: File name with extension (.jpg, .jpeg, .png, .webp, .gif)
+                alt_name:
+                  type: string
+                  maxLength: 100
+                  description: Prefix added to the stored file name
+      responses:
+        "201":
+          description: Image uploaded
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/UploadedImage"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/prices/online:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Prices
+      summary: List online prices
+      description: |
+        One row per SKU: the default price and the price per connected store (enabled
+        channels only). Sorted by `sku_code`.
+      operationId: listOnlinePrices
+      x-scope: product.price.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: sku_codes
+          in: query
+          description: Exact SKU codes. Repeat the parameter for several values.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: channel_ids
+          in: query
+          description: Only SKUs listed on these channels. Repeat the parameter for several values.
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/ChannelId"
+          style: form
+          explode: true
+        - name: last_modified_since
+          in: query
+          description: Only SKUs whose price changed on or after this date (ISO 8601)
+          schema:
+            type: string
+            format: date
+            example: 2026-10-01
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/OnlinePrice"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/prices/offline:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Prices
+      summary: List offline prices per location
+      description: |
+        One row per SKU with the price per active location. A location without its own
+        price shows the SKU default price (`is_custom: false`). Sorted by `sku_code`.
+      operationId: listOfflinePrices
+      x-scope: product.price.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: location_ids
+          in: query
+          description: Only these locations. Repeat the parameter for several values.
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+        - name: is_pos_outlet
+          in: query
+          description: Only POS outlet (`true`) or non-POS (`false`) locations
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/OfflinePrice"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/prices/on-promotion:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Prices
+      summary: List SKUs on promotion
+      description: |
+        SKUs in promotions that are running now (started and not ended). One row per SKU
+        per promotion, so a SKU can appear more than once.
+
+        | promotion_type | source |
+        |---|---|
+        | `channel` | marketplace/online price promotion |
+        | `pos_discount` | POS discount |
+        | `pos_min_qty` | POS promotion: minimum quantity |
+        | `pos_buy_x_get_y` | POS promotion: buy X get Y |
+        | `pos_free_item_min_trans` | POS promotion: free item with minimum transaction |
+      operationId: listPromotionPrices
+      x-scope: product.price.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: promotion_types
+          in: query
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/PromotionType"
+          style: form
+          explode: true
+        - name: channel_ids
+          in: query
+          description: Channel ids, including `524288` (Jubelio POS) for POS promotions
+          schema:
+            type: array
+            items:
+              type: integer
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PromotionPrice"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/prices/sync-failures:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Prices
+      summary: List price sync failures
+      description: |
+        The latest failed price sync per product per store (enabled channels only), newest
+        first.
+      operationId: listPriceSyncFailures
+      x-scope: product.price.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: channel_ids
+          in: query
+          schema:
+            type: array
+            items:
+              $ref: "#/components/schemas/ChannelId"
+          style: form
+          explode: true
+        - name: store_id
+          in: query
+          schema:
+            type: integer
+        - name: date_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: date_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PriceSyncFailure"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/prices/adjustments:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+    get:
+      tags:
+        - Prices
+      summary: List price adjustments
+      description: Price adjustment documents, newest transaction first.
+      operationId: listPriceAdjustments
+      x-scope: product.price.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum:
+              - online
+              - offline
+            default: online
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PriceAdjustment"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+    post:
+      tags:
+        - Prices
+      summary: Create price adjustment
+      description: |
+        **Not available yet** (implemented, not enabled): see `x-available`.
+
+        Creates a price adjustment document (auto-numbered) and applies the prices:
+        - `online`: `default_price` (SKU default) and/or `store_prices` (per store)
+        - `offline`: `location_prices` (per location)
+
+        The response returns after the prices are synced to the marketplaces/POS, so it
+        can be slow. The response does not include the adjustment id: find it with
+        `GET /catalog/prices/adjustments?q=<sku_code>`, then follow the sync result in
+        `GET /catalog/prices/adjustments/{adjustment_id}/items`.
+      operationId: createPriceAdjustment
+      x-scope: product.price.write
+      x-available: false
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - item_id
-                - item_group_id
-                - sell_price
-              properties:
-                item_id:
-                  type: integer
-                item_group_id:
-                  type: integer
-                sell_price:
-                  type: number
-            example:
-              item_id: 50
-              item_group_id: 12
-              sell_price: 125000
+              $ref: "#/components/schemas/PriceAdjustmentInput"
+      responses:
+        "201":
+          description: Adjustment created
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Envelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ActionResult"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: |
+            Error codes:
+            - `sku_not_found`: a `sku_id` does not exist or is archived
+            - `store_not_found`: a `store_id` is not a store of this merchant on an enabled channel
+            - `location_not_found`: a `location_id` does not exist or is inactive
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/prices/adjustments/{adjustment_id}:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/AdjustmentId"
+    get:
+      tags:
+        - Prices
+      summary: Get price adjustment
+      operationId: getPriceAdjustment
+      x-scope: product.price.read
       responses:
         "200":
           description: OK
@@ -358,13 +1621,61 @@ paths:
                   - type: object
                     properties:
                       data:
-                        $ref: "#/components/schemas/ActionResult"
+                        $ref: "#/components/schemas/PriceAdjustment"
         "400":
-          $ref: "#/components/responses/BadRequest"
+          $ref: "#/components/responses/ValidationError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/AdjustmentNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /catalog/prices/adjustments/{adjustment_id}/items:
+    parameters:
+      - $ref: "#/components/parameters/JblMerchantId"
+      - $ref: "#/components/parameters/AdjustmentId"
+    get:
+      tags:
+        - Prices
+      summary: List price adjustment items
+      description: |
+        SKUs of the adjustment with the price and sync status per store/location.
+        Sync status is not available for adjustments older than 90 days.
+      operationId: listPriceAdjustmentItems
+      x-scope: product.price.read
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/Q"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/XRequestId"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/PriceAdjustmentItem"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/AdjustmentNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /transfer-orders:
     parameters:
       - $ref: "#/components/parameters/JblMerchantId"
@@ -876,6 +2187,45 @@ components:
         minimum: 1
         maximum: 100
         default: 20
+    Q:
+      name: q
+      in: query
+      description: Case-insensitive search text. Empty string matches everything.
+      schema:
+        type: string
+        default: ""
+    CategoryId:
+      name: category_id
+      in: path
+      required: true
+      description: Jubelio category id
+      schema:
+        type: integer
+        minimum: 1
+    ChannelId:
+      name: channel_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ChannelId"
+    ProductId:
+      name: product_id
+      in: path
+      required: true
+      description: Product id
+      schema:
+        type: integer
+        minimum: 1
+        example: 101
+    AdjustmentId:
+      name: adjustment_id
+      in: path
+      required: true
+      description: Price adjustment id
+      schema:
+        type: integer
+        minimum: 1
+        example: 120
   responses:
     BadRequest:
       description: |
@@ -946,8 +2296,133 @@ components:
             meta: null
             error:
               code: endpoint_not_authorized
-              message: "endpoint_not_authorized: this endpoint is not authorized for the current access token (requires scope: catalog.read)"
+              message: "endpoint_not_authorized: this endpoint is not authorized for the current access token (requires scope: product.read)"
             request_id: 3fa4c1e0-1234-4a5b-8c6d-c1d2e3f4a5b6
+    ValidationError:
+      description: |
+        Request validation failed.
+        Error code: `validation_error`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            data: null
+            meta: null
+            error:
+              code: validation_error
+              message: '"page_size" must be less than or equal to 100'
+            request_id: 3f6c2a5e-8f0e-4b8e-9a51-2f0c7d1e4b11
+    InternalError:
+      description: |
+        Unexpected server error. The message is generic.
+        Error code: `internal_error`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    CategoryNotFound:
+      description: |
+        Category does not exist.
+        Error code: `category_not_found`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    CategoryMappingNotFound:
+      description: |
+        The category is not mapped to this channel yet. Map it first with
+        `POST /catalog/categories/mappings`.
+        Error code: `category_mapping_not_found`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    CustomCategoryDisabled:
+      description: |
+        The merchant uses Jubelio's default category tree, which cannot be changed.
+        Write endpoints are only available when custom categories are enabled.
+        Error code: `custom_category_disabled`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ProductNotFound:
+      description: |
+        Product does not exist.
+        Error code: `product_not_found`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    ProductValidationFailed:
+      description: |
+        Business validation failed. `message` carries the reason.
+        Error code: `product_validation_failed`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            data: null
+            meta: null
+            error:
+              code: product_validation_failed
+              message: "product_validation_failed: SKU KAOS-M sudah digunakan"
+            request_id: 3f6c2a5e-8f0e-4b8e-9a51-2f0c7d1e4b11
+    ProductRejected:
+      description: |
+        Request validation failed (`validation_error`) or the product was rejected (`product_rejected`).
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    BarcodeTaken:
+      description: |
+        A barcode is already used by another SKU.
+        Error code: `barcode_taken`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    AdjustmentNotFound:
+      description: |
+        Price adjustment does not exist.
+        Error code: `adjustment_not_found`.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/XRequestId"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
   headers:
     XRequestId:
       description: |
@@ -1163,31 +2638,6 @@ components:
         trial_ends_at: 2026-10-20T10:00:00Z
         current_period_ends_at: 2026-11-01T00:00:00Z
         grace_period_ends_at: 2026-11-08T00:00:00Z
-    Product:
-      type: object
-      properties:
-        product_id:
-          type: integer
-        name:
-          type: string
-        sell_price:
-          type: number
-        thumbnail:
-          type: string
-          format: uri
-        variants:
-          type: array
-          items:
-            type: object
-            properties:
-              item_id:
-                type: integer
-              sku:
-                type: string
-              sell_price:
-                type: number
-              available_qty:
-                type: number
     TransferOrder:
       type: object
       properties:
@@ -1235,19 +2685,6 @@ components:
           type: string
           enum:
             - ok
-    Category:
-      type: object
-      properties:
-        category_id:
-          type: integer
-        category_name:
-          type: string
-        parent_id:
-          type:
-            - integer
-            - "null"
-        has_children:
-          type: boolean
     AccountSummary:
       type: object
       properties:
@@ -1575,3 +3012,1140 @@ components:
             - string
             - "null"
           description: The id of the level above. null for provinces.
+    ChannelId:
+      type: integer
+      description: |
+        Marketplace channel. Only channels enabled for the Open API are accepted;
+        other values return `validation_error`.
+
+        | id | channel |
+        |---|---|
+        | 2 | Bukalapak |
+        | 4 | Lazada |
+        | 8 | Zalora |
+        | 16 | Elevenia |
+        | 32 | Blibli |
+        | 64 | Shopee |
+        | 128 | Tokopedia |
+        | 512 | Blanja |
+        | 2048 | Zilingo |
+        | 65536 | Akulaku |
+        | 131076 | TikTok Shop |
+        | 131085 | Toco |
+        | 262144 | DealPOS |
+      enum:
+        - 2
+        - 4
+        - 8
+        - 16
+        - 32
+        - 64
+        - 128
+        - 512
+        - 2048
+        - 65536
+        - 131076
+        - 131085
+        - 262144
+    CategorySummary:
+      type: object
+      properties:
+        category_id:
+          type: integer
+          example: 12
+        category_name:
+          type: string
+          example: Kaos
+        full_name:
+          type: string
+          example: Fashion > Pria > Kaos
+        has_children:
+          type: boolean
+    Category:
+      type: object
+      properties:
+        category_id:
+          type: integer
+          example: 12
+        category_name:
+          type: string
+          example: Kaos
+        parent_id:
+          type: integer
+          minimum: 0
+          example: 7
+          description: Parent category id. `0` for root categories.
+        has_children:
+          type: boolean
+    CategoryInput:
+      type: object
+      required:
+        - category_name
+        - parent_id
+      additionalProperties: false
+      properties:
+        category_name:
+          type: string
+          minLength: 1
+          example: Kaos
+        parent_id:
+          type: integer
+          minimum: 0
+          example: 7
+          description: Parent category id. Use `0` for a root category.
+    CategoryMappingItem:
+      type: object
+      properties:
+        category_id:
+          type: integer
+          example: 12
+        category_name:
+          type: string
+          example: Kaos
+        full_name:
+          type: string
+          example: Fashion > Pria > Kaos
+        mappings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelCategoryRef"
+    ChannelCategoryRef:
+      type: object
+      properties:
+        channel_id:
+          $ref: "#/components/schemas/ChannelId"
+        channel_category_id:
+          type: string
+          example: "100017"
+        channel_category_name:
+          type:
+            - string
+            - "null"
+          example: Kaos
+        channel_full_category_name:
+          type:
+            - string
+            - "null"
+          example: Pakaian Pria > Kaos
+    CategoryMappingInput:
+      type: object
+      required:
+        - category_id
+        - channel_id
+        - channel_category_id
+      additionalProperties: false
+      properties:
+        category_id:
+          type: integer
+          minimum: 1
+          example: 12
+          description: Jubelio category id
+        channel_id:
+          $ref: "#/components/schemas/ChannelId"
+        channel_category_id:
+          type: string
+          example: "100017"
+          description: Marketplace category id. Browse with `GET /catalog/categories/channel-categories/{channel_id}/{channel_category_id}`.
+    CategoryMapping:
+      type: object
+      properties:
+        category_id:
+          type: integer
+          example: 12
+        channel_id:
+          $ref: "#/components/schemas/ChannelId"
+        channel_category_id:
+          type: string
+          example: "100017"
+        channel_category_name:
+          type: string
+          example: Kaos
+        channel_full_category_name:
+          type: string
+          example: Pakaian Pria > Kaos
+    AttributeMapping:
+      type: object
+      properties:
+        attribute_id:
+          type: integer
+          example: 5
+        attribute_name:
+          type: string
+          example: Bahan
+        channel_attribute_name:
+          type:
+            - string
+            - "null"
+          example: Material
+          description: Display name of the mapped marketplace attribute; null if not mapped
+    AttributeOption:
+      type: object
+      properties:
+        channel_attribute_name:
+          type: string
+          example: material
+        display_name:
+          type: string
+          example: Material
+    VariationMapping:
+      type: object
+      properties:
+        variation_id:
+          type: integer
+          example: 3
+        variation_name:
+          type: string
+          example: Warna
+        channel_variation_name:
+          type:
+            - string
+            - "null"
+          example: Color
+          description: Name of the mapped marketplace variation; null if not mapped
+    VariationOption:
+      type: object
+      properties:
+        channel_variation_id:
+          type: string
+          example: "1000"
+        channel_variation_name:
+          type: string
+          example: Color
+    ChannelCategory:
+      type: object
+      properties:
+        channel_category_id:
+          type: string
+          example: "62544801"
+        category_name:
+          type: string
+          example: Kaos
+        parent_id:
+          type: string
+          example: "62544700"
+          description: '`"0"` for root categories'
+    ChannelCategoryChild:
+      type: object
+      properties:
+        channel_category_id:
+          type: string
+          example: "62544802"
+        category_name:
+          type: string
+          example: Kaos Polos
+        has_children:
+          type: boolean
+    ChannelCategoryDetail:
+      type: object
+      properties:
+        category:
+          anyOf:
+            - $ref: "#/components/schemas/ChannelCategory"
+            - type: "null"
+          description: null when `channel_category_id` is `0` (root listing)
+        ancestors:
+          type: array
+          description: From the root down to the direct parent (excludes the category itself)
+          items:
+            $ref: "#/components/schemas/ChannelCategory"
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelCategoryChild"
+    VariationValue:
+      type: object
+      properties:
+        label:
+          type:
+            - string
+            - "null"
+          example: Ukuran
+        value:
+          type: string
+          example: M
+    Variation:
+      type: object
+      required:
+        - label
+        - values
+      properties:
+        label:
+          type: string
+          example: Ukuran
+        values:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type:
+              - string
+              - number
+          example:
+            - M
+            - L
+    Package:
+      type: object
+      properties:
+        weight:
+          type:
+            - number
+            - "null"
+          description: Weight in grams
+          example: 200
+        length:
+          type:
+            - number
+            - "null"
+          example: 30
+        width:
+          type:
+            - number
+            - "null"
+          example: 20
+        height:
+          type:
+            - number
+            - "null"
+          example: 2
+    ProductImage:
+      type: object
+      properties:
+        image_id:
+          type: integer
+          example: 77
+        url:
+          type: string
+          example: https://cdn.example.com/kaos-1.jpg
+        thumbnail:
+          type:
+            - string
+            - "null"
+        sequence_number:
+          type: integer
+          example: 1
+    ImageInput:
+      type: object
+      required:
+        - url
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          example: https://cdn.example.com/kaos-1.jpg
+          description: Image URL, e.g. from `POST /catalog/images`
+        thumbnail:
+          type:
+            - string
+            - "null"
+          description: Thumbnail URL. Defaults to `url`.
+        sequence_number:
+          type: integer
+          minimum: 1
+          description: Defaults to the position in the list
+    UploadedImage:
+      type: object
+      properties:
+        name:
+          type: string
+          example: kaos-hitam.jpg
+          description: Stored file name
+        url:
+          type: string
+          example: https://files.example.com/omnichannel/kaos-hitam.jpg
+        thumbnail:
+          type:
+            - string
+            - "null"
+          example: https://files.example.com/omnichannel/kaos-hitam_thumb.jpg
+    ProductSummary:
+      type: object
+      properties:
+        product_id:
+          type: integer
+          example: 101
+        product_name:
+          type: string
+          example: Kaos Polos
+        category_id:
+          type:
+            - integer
+            - "null"
+          example: 12
+        sell_price:
+          type:
+            - number
+            - "null"
+          example: 75000
+        thumbnail:
+          type:
+            - string
+            - "null"
+        is_consignment:
+          type: boolean
+        last_modified:
+          type:
+            - string
+            - "null"
+          format: date-time
+        product_skus:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSkuSummary"
+        channels:
+          type: array
+          description: Channels where the product is listed (enabled channels only)
+          items:
+            type: object
+            properties:
+              channel_id:
+                $ref: "#/components/schemas/ChannelId"
+              store_id:
+                type: integer
+                example: 9
+              store_name:
+                type:
+                  - string
+                  - "null"
+                example: Toko A
+              channel_url:
+                type:
+                  - string
+                  - "null"
+    ProductSkuSummary:
+      type: object
+      properties:
+        sku_id:
+          type: integer
+          example: 5001
+        sku_code:
+          type: string
+          example: KAOS-HTM-M
+        sku_name:
+          type: string
+          example: Kaos Polos - Hitam, M
+        variation_values:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariationValue"
+        barcode:
+          type:
+            - string
+            - "null"
+        sell_price:
+          type:
+            - number
+            - "null"
+          example: 75000
+        is_bundle:
+          type: boolean
+        thumbnail:
+          type:
+            - string
+            - "null"
+    ProductSku:
+      type: object
+      properties:
+        sku_id:
+          type: integer
+          example: 5001
+        sku_code:
+          type: string
+          example: KAOS-HTM-M
+        sku_name:
+          type: string
+          example: Kaos Polos - Hitam, M
+        variation_values:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariationValue"
+        barcode:
+          type:
+            - string
+            - "null"
+        sell_price:
+          type:
+            - number
+            - "null"
+          example: 75000
+        package:
+          $ref: "#/components/schemas/Package"
+        is_bundle:
+          type: boolean
+        is_archived:
+          type: boolean
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductImage"
+        composition:
+          type: array
+          description: Bundle components (bundle SKUs only)
+          items:
+            $ref: "#/components/schemas/Composition"
+    Composition:
+      type: object
+      required:
+        - sku_id
+        - qty
+      additionalProperties: false
+      properties:
+        sku_id:
+          type: integer
+          example: 4001
+        qty:
+          type: number
+          exclusiveMinimum: 0
+          example: 2
+    Product:
+      type: object
+      properties:
+        product_id:
+          type: integer
+          example: 101
+        product_name:
+          type: string
+          example: Kaos Polos
+        description:
+          type:
+            - string
+            - "null"
+        category_id:
+          type:
+            - integer
+            - "null"
+          example: 12
+        brand_id:
+          type:
+            - integer
+            - "null"
+        brand_name:
+          type:
+            - string
+            - "null"
+        sell_price:
+          type:
+            - number
+            - "null"
+          example: 75000
+        is_active:
+          type: boolean
+        has_variation:
+          type: boolean
+        has_bundle:
+          type: boolean
+        package:
+          allOf:
+            - $ref: "#/components/schemas/Package"
+            - type: object
+              properties:
+                content:
+                  type:
+                    - string
+                    - "null"
+                  example: 1 pcs
+        variations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variation"
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductImage"
+        product_skus:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductSku"
+        last_modified:
+          type:
+            - string
+            - "null"
+          format: date-time
+    ProductEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Envelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/Product"
+    PackageInput:
+      type: object
+      additionalProperties: false
+      properties:
+        weight:
+          type: number
+          exclusiveMinimum: 0
+          description: Weight in grams
+        length:
+          type:
+            - number
+            - "null"
+          minimum: 0
+        width:
+          type:
+            - number
+            - "null"
+          minimum: 0
+        height:
+          type:
+            - number
+            - "null"
+          minimum: 0
+        content:
+          type:
+            - string
+            - "null"
+    SkuFields:
+      type: object
+      required:
+        - sku_code
+        - sku_name
+      properties:
+        sku_code:
+          type: string
+          maxLength: 50
+          example: KAOS-HTM-M
+        sku_name:
+          type: string
+          example: Kaos Polos - Hitam, M
+        sell_price:
+          type: number
+          minimum: 100
+          description: Initial price (new SKUs only). Falls back to the product price.
+        barcode:
+          type:
+            - string
+            - "null"
+        variation_values:
+          type: array
+          items:
+            type: object
+            required:
+              - label
+              - value
+            properties:
+              label:
+                type: string
+                example: Ukuran
+              value:
+                type:
+                  - string
+                  - number
+                example: M
+        package:
+          allOf:
+            - $ref: "#/components/schemas/PackageInput"
+          description: |
+            On create, fields not sent (or the whole package) default to the product
+            `package` (weight, length, width, height).
+        images:
+          type: array
+          maxItems: 9
+          items:
+            $ref: "#/components/schemas/ImageInput"
+        composition:
+          type: array
+          description: Bundle components; makes this SKU a bundle
+          items:
+            $ref: "#/components/schemas/Composition"
+    SkuInput:
+      allOf:
+        - $ref: "#/components/schemas/SkuFields"
+      unevaluatedProperties: false
+    SkuUpdateInput:
+      allOf:
+        - type: object
+          properties:
+            sku_id:
+              type: integer
+              description: Existing SKU id; omit for a new SKU
+        - $ref: "#/components/schemas/SkuFields"
+      unevaluatedProperties: false
+    ProductCreateInput:
+      type: object
+      required:
+        - product_name
+        - description
+        - category_id
+        - sell_price
+        - package
+        - images
+        - product_skus
+      additionalProperties: false
+      properties:
+        product_name:
+          type: string
+          maxLength: 255
+          example: Kaos Polos
+        description:
+          type: string
+          example: Kaos katun 100%
+        category_id:
+          type: integer
+          example: 12
+        brand_id:
+          type:
+            - integer
+            - "null"
+        brand_name:
+          type:
+            - string
+            - "null"
+        sell_price:
+          type: number
+          minimum: 100
+          example: 75000
+          description: Initial product price
+        is_active:
+          type: boolean
+          default: true
+        package:
+          allOf:
+            - $ref: "#/components/schemas/PackageInput"
+            - required:
+                - weight
+        variations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variation"
+        images:
+          type: array
+          minItems: 1
+          maxItems: 9
+          items:
+            $ref: "#/components/schemas/ImageInput"
+        product_skus:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SkuInput"
+    ProductUpdateInput:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        product_name:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+        category_id:
+          type: integer
+        brand_id:
+          type:
+            - integer
+            - "null"
+        brand_name:
+          type:
+            - string
+            - "null"
+        is_active:
+          type: boolean
+        package:
+          $ref: "#/components/schemas/PackageInput"
+        variations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variation"
+    ProductImagesInput:
+      type: object
+      required:
+        - images
+      additionalProperties: false
+      properties:
+        images:
+          type: array
+          minItems: 1
+          maxItems: 9
+          items:
+            $ref: "#/components/schemas/ImageInput"
+    ProductSkusInput:
+      type: object
+      required:
+        - product_skus
+      additionalProperties: false
+      properties:
+        variations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Variation"
+        product_skus:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SkuUpdateInput"
+    PriceSkuBase:
+      type: object
+      properties:
+        sku_id:
+          type: integer
+          example: 5001
+        sku_code:
+          type: string
+          example: KAOS-M
+        sku_name:
+          type: string
+          example: Kaos Polos - M
+        product_id:
+          type: integer
+          example: 101
+        variation_values:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariationValue"
+        thumbnail:
+          type:
+            - string
+            - "null"
+    OnlinePrice:
+      allOf:
+        - $ref: "#/components/schemas/PriceSkuBase"
+        - type: object
+          properties:
+            last_modified:
+              type:
+                - string
+                - "null"
+              format: date-time
+              description: Last price change
+            default_price:
+              type:
+                - number
+                - "null"
+              example: 75000
+            store_prices:
+              type: array
+              items:
+                type: object
+                properties:
+                  channel_id:
+                    $ref: "#/components/schemas/ChannelId"
+                  store_id:
+                    type: integer
+                    example: 9
+                  store_name:
+                    type:
+                      - string
+                      - "null"
+                    example: Toko A
+                  price:
+                    type:
+                      - number
+                      - "null"
+                    example: 79000
+                  is_listed:
+                    type: boolean
+                    description: Sold on this store
+    OfflinePrice:
+      allOf:
+        - $ref: "#/components/schemas/PriceSkuBase"
+        - type: object
+          properties:
+            default_price:
+              type:
+                - number
+                - "null"
+              example: 75000
+            location_prices:
+              type: array
+              items:
+                type: object
+                properties:
+                  location_id:
+                    type: integer
+                    example: 3
+                  location_name:
+                    type: string
+                    example: Gudang Utama
+                  is_pos_outlet:
+                    type: boolean
+                  price:
+                    type:
+                      - number
+                      - "null"
+                    example: 72000
+                  is_custom:
+                    type: boolean
+                    description: true = location has its own price; false = default price
+    PromotionType:
+      type: string
+      enum:
+        - channel
+        - pos_discount
+        - pos_min_qty
+        - pos_buy_x_get_y
+        - pos_free_item_min_trans
+    PromotionPrice:
+      type: object
+      properties:
+        promotion_id:
+          type: integer
+          example: 31
+        promotion_name:
+          type: string
+          example: Promo 10.10
+        promotion_type:
+          $ref: "#/components/schemas/PromotionType"
+        sku_id:
+          type: integer
+          example: 5001
+        sku_code:
+          type: string
+          example: KAOS-M
+        sku_name:
+          type: string
+          example: Kaos Polos - M
+        variation_values:
+          type: array
+          items:
+            $ref: "#/components/schemas/VariationValue"
+        thumbnail:
+          type:
+            - string
+            - "null"
+        sell_price:
+          type:
+            - number
+            - "null"
+          example: 75000
+          description: null for rule-based POS promotions
+        promotion_price:
+          type:
+            - number
+            - "null"
+          example: 69000
+          description: null for rule-based POS promotions
+        channels:
+          type: array
+          items:
+            type: object
+            properties:
+              channel_id:
+                type:
+                  - integer
+                  - "null"
+                example: 64
+              store_id:
+                type:
+                  - integer
+                  - "null"
+                example: 9
+              channel_name:
+                type:
+                  - string
+                  - "null"
+                example: Shopee - Toko A
+    PriceSyncFailure:
+      type: object
+      properties:
+        log_id:
+          type: integer
+          example: 9912
+        failed_at:
+          type: string
+          format: date-time
+        product_id:
+          type: integer
+          example: 101
+        product_name:
+          type: string
+          example: Kaos Polos
+        sku_id:
+          type:
+            - integer
+            - "null"
+          example: 5001
+        sku_code:
+          type:
+            - string
+            - "null"
+          example: KAOS-M
+        sku_name:
+          type:
+            - string
+            - "null"
+          example: Kaos Polos - M
+        channel_id:
+          $ref: "#/components/schemas/ChannelId"
+        store_id:
+          type: integer
+          example: 9
+        store_name:
+          type:
+            - string
+            - "null"
+          example: Toko A
+        price:
+          type:
+            - number
+            - "null"
+          example: 79000
+        error_message:
+          type:
+            - string
+            - "null"
+          description: Message from the marketplace
+        adjustment_id:
+          type:
+            - integer
+            - "null"
+          example: 120
+        adjustment_no:
+          type:
+            - string
+            - "null"
+          example: TRX-000000120
+    PriceAdjustment:
+      type: object
+      properties:
+        adjustment_id:
+          type: integer
+          example: 120
+        adjustment_no:
+          type: string
+          example: TRX-000000120
+        type:
+          type: string
+          enum:
+            - online
+            - offline
+        note:
+          type:
+            - string
+            - "null"
+        created_by:
+          type:
+            - string
+            - "null"
+          description: User or app code that created the adjustment
+        created_at:
+          type:
+            - string
+            - "null"
+          format: date-time
+        item_count:
+          type:
+            - integer
+            - "null"
+          example: 25
+        synced_count:
+          type:
+            - integer
+            - "null"
+          example: 23
+    PriceAdjustmentItem:
+      type: object
+      properties:
+        sku_id:
+          type: integer
+          example: 5001
+        sku_code:
+          type: string
+          example: KAOS-M
+        sku_name:
+          type: string
+          example: Kaos Polos - M
+        error_count:
+          type: integer
+          example: 1
+        prices:
+          type: array
+          items:
+            type: object
+            properties:
+              store_id:
+                type:
+                  - integer
+                  - "null"
+                description: -1 = default price; null for offline
+              channel_id:
+                type:
+                  - integer
+                  - "null"
+              store_name:
+                type:
+                  - string
+                  - "null"
+              location_id:
+                type:
+                  - integer
+                  - "null"
+                description: Offline adjustments only
+              price:
+                type:
+                  - number
+                  - "null"
+                example: 79000
+              is_error:
+                type: boolean
+              message:
+                type:
+                  - string
+                  - "null"
+                description: Sync result or error message
+    PriceAdjustmentInput:
+      type: object
+      required:
+        - type
+        - items
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum:
+            - online
+            - offline
+        note:
+          type: string
+          maxLength: 1000
+        items:
+          type: array
+          minItems: 1
+          description: |
+            One entry per SKU (unique `sku_id`). Prices are integers >= 0.
+            - `online`: send `default_price` and/or `store_prices`
+            - `offline`: send `location_prices`
+          items:
+            type: object
+            required:
+              - sku_id
+            additionalProperties: false
+            properties:
+              sku_id:
+                type: integer
+                example: 5001
+              default_price:
+                type: integer
+                minimum: 0
+                example: 75000
+              store_prices:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  required:
+                    - store_id
+                    - price
+                  properties:
+                    store_id:
+                      type: integer
+                      example: 9
+                    price:
+                      type: integer
+                      minimum: 0
+                      example: 79000
+              location_prices:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  required:
+                    - location_id
+                    - price
+                  properties:
+                    location_id:
+                      type: integer
+                      example: 3
+                    price:
+                      type: integer
+                      minimum: 0
+                      example: 72000
