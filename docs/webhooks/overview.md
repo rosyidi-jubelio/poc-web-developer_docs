@@ -121,15 +121,16 @@ Jubelio does not follow redirects. Point your callback URL at the final address.
 
 ## Retries
 
-A failed delivery is retried up to 2 more times, so each event is tried **at most 3 times**:
+A failed delivery is retried up to 3 more times, so each event is tried **at most 4 times**:
 
 | Attempt | When |
 | --- | --- |
 | 1 | Right away |
-| 2 | About 1 minute later |
-| 3 | About 5 minutes after attempt 2 |
+| 2 | About 5 minutes after attempt 1 |
+| 3 | About 15 minutes after attempt 2 |
+| 4 | About 30 minutes after attempt 3 |
 
-Every attempt carries the same `event_id`. After the third failed attempt the event is dropped.
+Every attempt carries the same `event_id`. After the fourth failed attempt the event is dropped.
 
 ## Good practice
 

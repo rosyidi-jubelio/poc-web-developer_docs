@@ -168,7 +168,7 @@ paths:
         for a free app.
 
         A subscription that is `expired` blocks the app's tokens, so in
-        practice an app reads `trial`, `active` or `over_due`. Use
+        practice an app reads `trial`, `active`, `over_due` or `cancelled`. Use
         `over_due` to ask the merchant to pay before `grace_period_ends_at`.
       operationId: getMerchant
       responses:
@@ -2588,12 +2588,14 @@ components:
             - trial
             - active
             - over_due
+            - cancelled
             - expired
           description: |
             - `trial`: inside the 7 day trial that started at install.
             - `active`: a paid period is running.
             - `over_due`: a paid period ended without renewal, inside the 7 day grace period.
-            - `expired`: the trial ended unpaid, or the grace period ran out.
+            - `cancelled`: the merchant cancelled. Access stays until `current_period_ends_at`, with no grace period and no further charge.
+            - `expired`: the trial ended unpaid, the grace period ran out, or a cancelled period ended.
         plan:
           type: object
           description: The plan the merchant is on, as defined by the developer in Dev Console.
