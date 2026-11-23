@@ -19,6 +19,7 @@ export type Schema = {
   default?: unknown;
   nullable?: boolean;
   title?: string;
+  'x-enumDescriptions'?: Record<string, string>;
 };
 
 export type Row = {
@@ -39,6 +40,7 @@ export function flatten(schema: Schema | undefined): Schema {
   for (const part of schema.allOf.map(flatten)) {
     merged.type ??= part.type;
     merged.description ??= part.description;
+    merged['x-enumDescriptions'] ??= part['x-enumDescriptions'];
     Object.assign(merged.properties!, part.properties);
     merged.required!.push(...(part.required ?? []));
   }
@@ -103,9 +105,23 @@ export function buildRows(schema: Schema, depth = 0, prefix = ''): Row[] {
 function Notes({schema}: {schema: Schema}): ReactNode {
   const s = flatten(schema);
   const values = s.enum ?? s.items?.enum;
+  const names = s['x-enumDescriptions'] ?? s.items?.['x-enumDescriptions'];
   return (
     <>
-      {values && (
+      {values && names && (
+        <div className={styles.note}>
+          Allowed:
+          <ul className={styles.enumList}>
+            {values.map((v) => (
+              <li key={String(v)}>
+                <code>{String(v)}</code>
+                <span>{names[String(v)]}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {values && !names && (
         <div className={styles.note}>
           Allowed:{' '}
           {values.map((v) => (

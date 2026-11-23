@@ -1,4 +1,4 @@
-// Searchable endpoint dropdown for the API testing tool, grouped by module and sub-module.
+// Searchable endpoint dropdown for the API testing tool: categories on the left, endpoints on the right.
 import React, {useEffect, useMemo, useRef, useState, type ReactNode} from 'react';
 import clsx from 'clsx';
 
@@ -13,18 +13,19 @@ export type PickerItem = {
   sub: string | null;
 };
 
-type Group = {module: string; subs: {sub: string | null; items: PickerItem[]}[]};
+type Category = {key: string; module: string; sub: string | null; items: PickerItem[]};
 
-function groupItems(items: PickerItem[]): Group[] {
-  const groups: Group[] = [];
+const categoryKey = (item: PickerItem) => `${item.module}/${item.sub ?? ''}`;
+
+function groupItems(items: PickerItem[]): Category[] {
+  const categories: Category[] = [];
   for (const item of items) {
-    let g = groups.find((x) => x.module === item.module);
-    if (!g) groups.push((g = {module: item.module, subs: []}));
-    let s = g.subs.find((x) => x.sub === item.sub);
-    if (!s) g.subs.push((s = {sub: item.sub, items: []}));
-    s.items.push(item);
+    const key = categoryKey(item);
+    let c = categories.find((x) => x.key === key);
+    if (!c) categories.push((c = {key, module: item.module, sub: item.sub, items: []}));
+    c.items.push(item);
   }
-  return groups;
+  return categories;
 }
 
 export function MethodBadge({method}: {method: string}): ReactNode {
@@ -43,8 +44,11 @@ export default function EndpointPicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [category, setCategory] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const nav = useRef<HTMLElement>(null);
   const selected = items.find((i) => i.id === value);
 
   const filtered = useMemo(() => {
@@ -54,12 +58,35 @@ export default function EndpointPicker({
       [i.method, i.path, i.summary, i.module, i.sub ?? ''].join(' ').toLowerCase().includes(q),
     );
   }, [items, query]);
-  const groups = useMemo(() => groupItems(filtered), [filtered]);
+  const categories = useMemo(() => groupItems(filtered), [filtered]);
+  const modules = useMemo(() => {
+    const out: {module: string; categories: Category[]}[] = [];
+    for (const c of categories) {
+      let m = out.find((x) => x.module === c.module);
+      if (!m) out.push((m = {module: c.module, categories: []}));
+      m.categories.push(c);
+    }
+    return out;
+  }, [categories]);
+
+  const scrollToCategory = (key: string) => {
+    const section = list.current?.querySelector<HTMLElement>(`[data-category="${CSS.escape(key)}"]`);
+    if (section && list.current) list.current.scrollTop = section.offsetTop;
+    setCategory(key);
+  };
 
   useEffect(() => {
     if (!open) return;
-    setActive(Math.max(0, filtered.findIndex((i) => i.id === value)));
+    const index = Math.max(0, filtered.findIndex((i) => i.id === value));
+    setActive(index);
     search.current?.focus();
+    const current = filtered[index];
+    if (current) {
+      const option = list.current?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+      const section = option?.closest<HTMLElement>('[data-category]');
+      if (section && list.current) list.current.scrollTop = section.offsetTop;
+      setCategory(categoryKey(current));
+    }
     const close = (e: MouseEvent) => {
       if (!root.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -67,7 +94,22 @@ export default function EndpointPicker({
     return () => document.removeEventListener('mousedown', close);
   }, [open]);
 
-  useEffect(() => setActive(0), [query]);
+  useEffect(() => {
+    if (!open) return;
+    setActive(0);
+    if (list.current) list.current.scrollTop = 0;
+    setCategory(categories[0]?.key ?? null);
+  }, [query]);
+
+  const onListScroll = () => {
+    const el = list.current;
+    if (!el) return;
+    let current: string | null = null;
+    for (const section of el.querySelectorAll<HTMLElement>('[data-category]')) {
+      if (section.offsetTop <= el.scrollTop + 8) current = section.dataset.category ?? null;
+    }
+    setCategory(current ?? categories[0]?.key ?? null);
+  };
 
   const pick = (id: string) => {
     onChange(id);
@@ -77,6 +119,7 @@ export default function EndpointPicker({
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') setOpen(false);
+    if (!open) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActive((a) => Math.min(filtered.length - 1, a + 1));
@@ -92,8 +135,19 @@ export default function EndpointPicker({
   };
 
   useEffect(() => {
-    root.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({block: 'nearest'});
+    if (!open) return;
+    list.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({block: 'nearest'});
   }, [active]);
+
+  useEffect(() => {
+    const item = nav.current?.querySelector<HTMLElement>('[aria-current="true"]');
+    if (!item || !nav.current) return;
+    const top = item.offsetTop;
+    const bottom = top + item.offsetHeight;
+    if (top < nav.current.scrollTop || bottom > nav.current.scrollTop + nav.current.clientHeight) {
+      nav.current.scrollTop = top - nav.current.clientHeight / 3;
+    }
+  }, [category, open]);
 
   return (
     <div className={styles.root} ref={root} onKeyDown={onKeyDown}>
@@ -104,74 +158,111 @@ export default function EndpointPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen(!open)}>
+        <span className={styles.triggerLabel}>API name</span>
         {selected ? (
-          <>
-            <span className={styles.crumb}>
-              {selected.module}
-              {selected.sub && ` / ${selected.sub}`}
-            </span>
-            <span className={styles.triggerMain}>
-              <MethodBadge method={selected.method} />
-              <span className={styles.summary}>{selected.summary}</span>
-            </span>
-          </>
+          <span className={styles.triggerText}>
+            <span className={styles.summary}>{selected.summary}</span>
+            <code className={styles.path}>{selected.path}</code>
+          </span>
         ) : (
-          'Select an endpoint'
+          <span className={styles.triggerText}>Select an endpoint</span>
         )}
-        <span className={styles.caret} aria-hidden>
-          {'▾'}
-        </span>
+        {selected && <MethodBadge method={selected.method} />}
+        <span className={clsx(styles.caret, open && styles.caretOpen)} aria-hidden />
       </button>
 
       {open && (
         <div className={styles.panel}>
-          <input
-            ref={search}
-            className={styles.search}
-            placeholder="Search endpoints"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <div className={styles.list} role="listbox">
-            {groups.length === 0 && <div className={styles.empty}>No endpoints match.</div>}
-            {groups.map((g) => (
-              <div key={g.module} className={styles.group}>
-                <div className={styles.module}>{g.module}</div>
-                {g.subs.map((s) => (
-                  <div key={s.sub ?? '_'}>
-                    {s.sub && <div className={styles.sub}>{s.sub}</div>}
-                    {s.items.map((item) => {
-                      const index = filtered.indexOf(item);
-                      return (
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={item.id === value}
-                          key={item.id}
-                          data-index={index}
-                          className={clsx(
-                            styles.option,
-                            s.sub && styles.indented,
-                            item.id === value && styles.selected,
-                            index === active && styles.active,
-                          )}
-                          onMouseEnter={() => setActive(index)}
-                          onClick={() => pick(item.id)}>
-                          <MethodBadge method={item.method} />
-                          <span className={styles.optionText}>
-                            <span className={styles.summary}>{item.summary}</span>
-                            <code className={styles.path}>{item.path}</code>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            ))}
+          <div className={styles.searchWrap}>
+            <input
+              ref={search}
+              className={styles.search}
+              placeholder="Search by name, path, or module"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <svg className={styles.searchIcon} viewBox="0 0 24 24" aria-hidden>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+          </div>
+          <div className={styles.columns}>
+            <nav className={styles.nav} ref={nav}>
+              {modules.map((m) => (
+                <div key={m.module} className={styles.navGroup}>
+                  {m.categories.length === 1 && m.categories[0].sub === null ? (
+                    <NavItem
+                      label={m.module}
+                      active={category === m.categories[0].key}
+                      onClick={() => scrollToCategory(m.categories[0].key)}
+                    />
+                  ) : (
+                    <>
+                      <div className={styles.navModule}>{m.module}</div>
+                      <div className={styles.navSub}>
+                        {m.categories.map((c) => (
+                          <NavItem
+                            key={c.key}
+                            label={c.sub ?? c.module}
+                            active={category === c.key}
+                            onClick={() => scrollToCategory(c.key)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+            </nav>
+            <div className={styles.list} role="listbox" ref={list} onScroll={onListScroll}>
+              {categories.length === 0 && <div className={styles.empty}>No endpoints match.</div>}
+              {categories.map((c) => (
+                <div key={c.key} data-category={c.key}>
+                  <div className={styles.groupTitle}>{c.sub ? `${c.module} / ${c.sub}` : c.module}</div>
+                  {c.items.map((item) => {
+                    const index = filtered.indexOf(item);
+                    const isSelected = item.id === value;
+                    return (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={isSelected}
+                        key={item.id}
+                        data-index={index}
+                        className={clsx(
+                          styles.option,
+                          isSelected && styles.selected,
+                          index === active && styles.active,
+                        )}
+                        onMouseEnter={() => setActive(index)}
+                        onClick={() => pick(item.id)}>
+                        <span className={clsx(styles.radio, isSelected && styles.radioOn)} aria-hidden />
+                        <span className={styles.optionText}>
+                          <span className={styles.summary}>{item.summary}</span>
+                          <code className={styles.path}>{item.path}</code>
+                        </span>
+                        <MethodBadge method={item.method} />
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function NavItem({label, active, onClick}: {label: string; active: boolean; onClick: () => void}): ReactNode {
+  return (
+    <button
+      type="button"
+      aria-current={active}
+      className={clsx(styles.navItem, active && styles.navActive)}
+      onClick={onClick}>
+      <span>{label}</span>
+    </button>
   );
 }

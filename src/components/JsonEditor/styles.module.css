@@ -1,0 +1,52 @@
+.root {
+  border: 1px solid var(--jbl-separator);
+  border-radius: 0.375rem;
+  min-height: 14rem;
+  max-height: 28rem;
+  overflow: auto;
+  resize: vertical;
+}
+
+.root:focus-within {
+  border-color: var(--jbl-primary);
+  box-shadow: 0 0 0 3px rgba(75, 104, 239, 0.15);
+}
+
+.invalid,
+.invalid:focus-within {
+  border-color: var(--jbl-danger);
+}
+
+.stack {
+  display: grid;
+  min-height: 100%;
+  min-width: max-content;
+}
+
+.layer {
+  grid-area: 1 / 1;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  white-space: pre;
+  tab-size: 2;
+  overflow: hidden;
+}
+
+.input {
+  width: 100%;
+  height: 100%;
+  min-height: 14rem;
+  color: transparent;
+  resize: none;
+  outline: none;
+}
+
+.input::selection {
+  background: rgba(75, 104, 239, 0.25);
+}

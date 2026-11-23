@@ -7,7 +7,7 @@
   border-radius: 0.5rem;
   overflow-x: auto;
   background: #ffffff;
-  margin: 0.5rem 0 1.25rem;
+  margin: 0.4rem 0 1rem;
 }
 
 .wrapper .table {
@@ -19,7 +19,7 @@
   border-radius: 0;
   border-collapse: collapse;
   table-layout: fixed;
-  font-size: 0.875rem;
+  font-size: 0.85rem;
 }
 
 .wrapper .table thead th {
@@ -30,7 +30,7 @@
   text-align: left;
   border: none;
   border-bottom: 1px solid var(--jbl-border);
-  padding: 0.7rem 1rem;
+  padding: 0.55rem 0.9rem;
   white-space: nowrap;
 }
 
@@ -42,8 +42,13 @@
 
 .wrapper .table td {
   border: none;
-  padding: 0.7rem 1rem;
+  padding: 0.55rem 0.9rem;
   vertical-align: top;
+  transition: background 0.1s;
+}
+
+.wrapper .table tbody tr:hover td {
+  background: #f0f3f8;
 }
 
 /* A line above each top-level field, none inside a nested group */
@@ -90,8 +95,8 @@
   border: 1px solid #dcdcdc;
   border-radius: 0.25rem;
   color: #1f2329;
-  font-size: 0.82rem;
-  padding: 0.05rem 0.4rem;
+  font-size: 0.78rem;
+  padding: 0.02rem 0.35rem;
   line-height: 1.5;
 }
 
@@ -150,6 +155,30 @@
 
 .note code {
   margin-right: 0.25rem;
+  white-space: nowrap;
+}
+
+.enumList {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.3rem 1rem;
+}
+
+.enumList li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.enumList code {
+  flex: none;
+  min-width: 3.6rem;
+  text-align: right;
+  margin-right: 0;
 }
 
 .empty {

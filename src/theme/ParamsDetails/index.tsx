@@ -2,6 +2,7 @@
 // matching the request and response body tables.
 import React, {type ReactNode} from 'react';
 import BrowserOnly from '@docusaurus/BrowserOnly';
+import ApiSection from '@site/src/components/ApiSection';
 import {FieldTable, flatten, type Row, type Schema} from '@site/src/components/SchemaTable';
 
 type Param = {
@@ -13,7 +14,7 @@ type Param = {
 };
 
 const TYPES = ['path', 'query', 'header', 'cookie'] as const;
-const TITLES = {path: 'Path parameters', query: 'Query parameters', header: 'Headers', cookie: 'Cookies'};
+const TITLES = {path: 'Path', query: 'Query', header: 'Header', cookie: 'Cookie'};
 
 function Params({parameters}: {parameters?: Param[]}): ReactNode {
   return (
@@ -31,10 +32,9 @@ function Params({parameters}: {parameters?: Param[]}): ReactNode {
           description: p.description ?? flatten(p.schema).description,
         }));
         return (
-          <div key={type} className="margin-bottom--md">
-            <h3 className="openapi-markdown__details-summary-header-params">{TITLES[type]}</h3>
-            <FieldTable rows={rows} nameHeader="Name" />
-          </div>
+          <ApiSection key={type} id={`${type}-parameters`} title={TITLES[type]}>
+            <FieldTable rows={rows} />
+          </ApiSection>
         );
       })}
     </>

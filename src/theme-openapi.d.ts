@@ -19,3 +19,8 @@ declare module '@theme/ApiItem/hooks' {
 declare module '@theme/ApiExplorer/Server/slice' {
   export function setServer(value: string): unknown;
 }
+
+declare module '@theme-original/ApiItem/Layout' {
+  import type {ReactNode} from 'react';
+  export default function ApiItemLayout(props: {children?: ReactNode}): ReactNode;
+}

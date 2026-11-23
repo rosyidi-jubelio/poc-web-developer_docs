@@ -1,59 +1,92 @@
-import type {ReactNode} from 'react';
-import clsx from 'clsx';
-import Link from '@docusaurus/Link';
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import Layout from '@theme/Layout';
-import Heading from '@theme/Heading';
+import type { ReactNode } from "react";
+import Link from "@docusaurus/Link";
+import useDocusaurusContext from "@docusaurus/useDocusaurusContext";
+import Layout from "@theme/Layout";
+import Heading from "@theme/Heading";
 
-import styles from './index.module.css';
+import styles from "./index.module.css";
+
+function Arrow(): ReactNode {
+  return (
+    <svg className={styles.arrow} viewBox="0 0 24 24" aria-hidden>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
 
 const cards = [
   {
-    title: 'Getting started',
-    to: '/docs/getting-started/create-an-app',
-    body: 'Create an app in the Dev Console and make your first API call.',
+    title: "Getting started",
+    to: "/docs/getting-started/create-an-app",
+    body: "Create an app in the Dev Console and make your first API call.",
+    icon: <path d="M12 5v14M5 12h14" />,
   },
   {
-    title: 'Authentication',
-    to: '/docs/authentication',
-    body: 'How your app gets and refreshes tokens.',
+    title: "Embedded apps",
+    to: "/docs/embedded-apps",
+    body: "Run your app inside the Jubelio App Store and verify the session token.",
+    icon: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M3 9h18" />
+      </>
+    ),
   },
   {
-    title: 'API reference',
-    to: '/docs/api',
-    body: 'Every Open API endpoint, generated from the OpenAPI specification.',
+    title: "Authentication",
+    to: "/docs/authentication",
+    body: "Exchange the install code for tokens and keep them refreshed.",
+    icon: (
+      <>
+        <rect x="5" y="11" width="14" height="9" rx="2" />
+        <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+      </>
+    ),
+  },
+  {
+    title: "API Reference",
+    to: "/docs/api",
+    body: "Every Open API endpoint with its scope, parameters and response.",
+    icon: <path d="M8 7 3 12l5 5M16 7l5 5-5 5" />,
   },
 ];
 
 export default function Home(): ReactNode {
-  const {siteConfig} = useDocusaurusContext();
+  const { siteConfig } = useDocusaurusContext();
   return (
     <Layout title="Home" description={siteConfig.tagline}>
-      <header className={clsx('hero', styles.heroBanner)}>
-        <div className="container">
-          <Heading as="h1" className="hero__title">
-            {siteConfig.title}
-          </Heading>
-          <p className="hero__subtitle">{siteConfig.tagline}</p>
-          <div className={styles.buttons}>
-            <Link className="button button--primary button--lg" to="/docs/">
-              Read the docs
+      <div className={styles.page}>
+        <header className={styles.hero}>
+          <div className={styles.heroInner}>
+            <Heading as="h1" className={styles.title}>
+              {siteConfig.title}
+            </Heading>
+            <p className={styles.lead}>
+              Guides and API reference for building apps that merchants open
+              inside the Jubelio App Store.
+            </p>
+            <Link className={styles.button} to="/docs/">
+              Read the documentation
             </Link>
           </div>
-        </div>
-      </header>
-      <main className={clsx('container', styles.cards)}>
-        <div className="row">
+        </header>
+        <main className={styles.cards}>
           {cards.map((c) => (
-            <div key={c.title} className="col col--4 margin-bottom--lg">
-              <Link to={c.to} className={clsx('card padding--lg', styles.card)}>
-                <Heading as="h3">{c.title}</Heading>
+            <Link key={c.title} to={c.to} className={styles.card}>
+              <svg className={styles.icon} viewBox="0 0 24 24" aria-hidden>
+                {c.icon}
+              </svg>
+              <div>
+                <h3>
+                  {c.title}
+                  <Arrow />
+                </h3>
                 <p>{c.body}</p>
-              </Link>
-            </div>
+              </div>
+            </Link>
           ))}
-        </div>
-      </main>
+        </main>
+      </div>
     </Layout>
   );
 }

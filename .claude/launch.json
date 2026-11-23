@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "docs-serve", "runtimeExecutable": "npm", "runtimeArgs": ["run", "serve", "--", "--port", "3100", "--no-open"], "port": 3100 }
+  ]
+}

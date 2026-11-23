@@ -161,6 +161,19 @@ async function writeTestingTool(doc, groups) {
     return { string: '', integer: 0, number: 0, boolean: false }[type] ?? null;
   };
 
+  const paramType = (schema) => {
+    if (!schema) return 'string';
+    const type = Array.isArray(schema.type) ? schema.type.find((t) => t !== 'null') : schema.type;
+    if (type === 'array') return `${paramType(schema.items)}[]`;
+    return type ?? 'string';
+  };
+
+  const scopeNames = doc.components?.securitySchemes?.oauth2?.flows?.authorizationCode?.scopes ?? {};
+  const scopesOf = (op) =>
+    (op.security ?? [])
+      .flatMap((req) => req.oauth2 ?? [])
+      .map((code) => ({ code, name: scopeNames[code] ?? code }));
+
   const operations = [];
   for (const g of groups.values()) {
     for (const [p, rawItem] of Object.entries(g.paths)) {
@@ -172,20 +185,24 @@ async function writeTestingTool(doc, groups) {
           name: prm.name,
           in: prm.in,
           required: Boolean(prm.required),
+          type: paramType(prm.schema),
           description: prm.description ?? prm.schema?.description ?? '',
           example: prm.example ?? prm.schema?.example ?? prm.schema?.default ?? '',
         }));
         const json = op.requestBody?.content?.['application/json'];
         const firstExample = json?.examples && Object.values(json.examples)[0]?.value;
         const body = json ? firstExample ?? json.example ?? sample(json.schema) : undefined;
+        const id = op.operationId ?? `${method}-${p}`;
         operations.push({
-          id: op.operationId ?? `${method}-${p}`,
+          id,
+          doc: op.operationId ? `/docs/api/${g.dir}/${op.operationId.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()}` : null,
           method: method.toUpperCase(),
           path: p,
           summary: op.summary ?? p,
           module: g.module.label,
           sub: g.sub?.label ?? null,
           auth: !(Array.isArray(op.security) && op.security.length === 0),
+          scopes: scopesOf(op),
           parameters,
           body: body === undefined ? null : JSON.stringify(body, null, 2),
         });

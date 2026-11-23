@@ -84,6 +84,42 @@ const config: Config = {
   themes: ['docusaurus-theme-openapi-docs', '@docusaurus/theme-mermaid'],
 
   themeConfig: {
+    docs: {
+      sidebar: {
+        hideable: true,
+      },
+    },
+    mermaid: {
+      theme: {light: 'base', dark: 'base'},
+      options: {
+        fontFamily: 'inherit',
+        themeVariables: {
+          fontFamily: 'inherit',
+          fontSize: '14px',
+          primaryColor: '#eef1fe',
+          primaryBorderColor: '#c5cdf9',
+          primaryTextColor: '#163a50',
+          secondaryColor: '#f7f8fa',
+          tertiaryColor: '#ffffff',
+          lineColor: '#8a96a3',
+          textColor: '#163a50',
+          actorBkg: '#eef1fe',
+          actorBorder: '#c5cdf9',
+          actorTextColor: '#163a50',
+          actorLineColor: '#c5cdf9',
+          signalColor: '#4d6474',
+          signalTextColor: '#163a50',
+          labelBoxBkgColor: '#eef1fe',
+          labelBoxBorderColor: '#c5cdf9',
+          labelTextColor: '#163a50',
+          noteBkgColor: '#fef9e7',
+          noteBorderColor: '#f3e2a5',
+          noteTextColor: '#163a50',
+          activationBkgColor: '#eef1fe',
+          activationBorderColor: '#c5cdf9',
+        },
+      },
+    },
     colorMode: {
       defaultMode: 'light',
       disableSwitch: true,
@@ -97,31 +133,39 @@ const config: Config = {
       },
       items: [
         {type: 'docSidebar', sidebarId: 'guides', position: 'left', label: 'Guides'},
-        {type: 'docSidebar', sidebarId: 'api', position: 'left', label: 'API reference'},
-        {to: '/api-testing', label: 'API testing', position: 'left'},
+        {type: 'docSidebar', sidebarId: 'api', position: 'left', label: 'API Reference'},
+        {to: '/api-testing', label: 'API Testing', position: 'left'},
         {to: '/docs/changelog', label: 'Changelog', position: 'left'},
       ],
     },
     footer: {
-      style: 'dark',
       links: [
         {
-          title: 'Docs',
+          title: 'Get started',
           items: [
-            {label: 'Getting started', to: '/docs/getting-started/create-an-app'},
-            {label: 'Authentication', to: '/docs/authentication'},
-            {label: 'API reference', to: '/docs/api'},
+            {label: 'Introduction', to: '/docs'},
+            {label: 'Create an app', to: '/docs/getting-started/create-an-app'},
+            {label: 'First API call', to: '/docs/getting-started/first-api-call'},
           ],
         },
         {
-          title: 'More',
+          title: 'Build',
           items: [
-            {label: 'API testing tool', to: '/api-testing'},
+            {label: 'Authentication', to: '/docs/authentication'},
+            {label: 'Webhooks', to: '/docs/webhooks'},
+            {label: 'Embedded apps', to: '/docs/embedded-apps'},
+          ],
+        },
+        {
+          title: 'Reference',
+          items: [
+            {label: 'API Reference', to: '/docs/api'},
+            {label: 'API Testing Tool', to: '/api-testing'},
             {label: 'Changelog', to: '/docs/changelog'},
           ],
         },
       ],
-      copyright: `Copyright ${new Date().getFullYear()} Jubelio.`,
+      copyright: `© ${new Date().getFullYear()} Jubelio. All rights reserved.`,
     },
     prism: {
       theme: prismThemes.github,
