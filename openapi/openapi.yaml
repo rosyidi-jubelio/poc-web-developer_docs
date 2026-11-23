@@ -9413,7 +9413,7 @@ components:
             - string
             - "null"
           example: GJ-000001234
-          description: Number of the depreciation journal, made from the journal prefix in the tenant settings (default `GJ`) and `journal_id`. `null` when the month has no depreciation journal yet.
+          description: Number of the depreciation journal, made from the journal prefix in the merchant settings (default `GJ`) and `journal_id`. `null` when the month has no depreciation journal yet.
         amount:
           type:
             - number
