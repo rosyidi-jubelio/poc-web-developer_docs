@@ -14,7 +14,7 @@ The Open API is organized by module. Each module groups related endpoints.
 | Merchant | The installing merchant's profile and its subscription to your app |
 | Catalogue | Products, prices, categories and category mappings |
 | WMS | Warehouse locations and transfer orders |
-| Finance | Invoices and accounts |
+| Finance | Sales and purchase documents, payments, contacts, assets, accounts, taxes and journals |
 | Reference | Shared reference data |
 
 ## Requests

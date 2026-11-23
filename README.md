@@ -98,7 +98,8 @@ The API reference mirrors the Open API modules. `scripts/api-modules.mjs` maps e
 a module folder. Modules that are not `flat` are split into sub-modules by the first path segment,
 so `/transfer-orders` and `/transfer-orders/{id}` both land in `wms/transfer-orders`. A tag can
 also set its sub-module with `sub`, which is how the several Catalogue tags (all under
-`/catalog/...`) get their own folders:
+`/catalog/...`) get their own folders. A tag with `prefix` uses the segment after it, so
+Finance paths (all under `/finance/...`) split by their second segment:
 
 ```
 docs/api/
@@ -112,7 +113,9 @@ docs/api/
   wms/locations/           WMS > Locations
   wms/transfer-orders/     WMS > Transfer orders
   finance/invoices/        Finance > Invoices
+  finance/...              Finance > Sales returns, Bills, Payments, Contacts, Assets, ...
   finance/accounts/        Finance > Accounts
+  finance/journals/        Finance > Journals
   reference/               Reference
 ```
 
