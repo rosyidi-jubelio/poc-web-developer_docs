@@ -10,19 +10,25 @@
   }
 }
 
+/* Page header inside the card: spans both columns, set apart by a tint and a rule */
 .head {
-  max-width: 80rem;
-  margin: 0 auto 1.25rem;
+  grid-column: 1 / -1;
+  padding: 1.15rem 1.5rem;
+  background: linear-gradient(100deg, #eef3ff, #f7f9ff 60%, #ffffff);
+  border-bottom: 1px solid var(--jbl-border);
+  border-radius: var(--jbl-radius) var(--jbl-radius) 0 0;
 }
 
 .head h1 {
+  margin: 0 0 0.2rem;
+  font-size: 1.35rem;
   font-weight: 800;
-  margin-bottom: 0.4rem;
 }
 
 .head p {
-  color: #4d6474;
   margin: 0;
+  font-size: 0.875rem;
+  color: #4d6474;
 }
 
 .card {
@@ -73,7 +79,8 @@
 @media (min-width: 997px) {
   .card {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    height: calc(100vh - var(--ifm-navbar-height) - 2rem);
+    grid-template-rows: auto minmax(0, 1fr);
+    height: calc(100vh - var(--ifm-navbar-height) - 4rem);
     min-height: 38rem;
   }
 

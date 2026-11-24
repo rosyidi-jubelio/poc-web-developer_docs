@@ -173,15 +173,14 @@ export default function ApiTesting(): ReactNode {
   return (
     <Layout title="API Testing Tool" description="Send test requests to the Jubelio Open API.">
       <main className={styles.page}>
-        <div className={styles.head}>
-          <Heading as="h1">API Testing Tool</Heading>
-          <p>
-            Pick an endpoint, fill in your access token and merchant ID, and send a real request to the
-            Jubelio Open API.
-          </p>
-        </div>
-
         <div className={styles.card}>
+          <div className={styles.head}>
+            <Heading as="h1">API Testing Tool</Heading>
+            <p>
+              Pick an endpoint, fill in your access token and merchant ID, and send a real request to the
+              Jubelio Open API.
+            </p>
+          </div>
           <section className={styles.left}>
             <div className={styles.leftTop}>
               <EndpointPicker
