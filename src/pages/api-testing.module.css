@@ -10,11 +10,11 @@
   }
 }
 
-/* Page header inside the card: spans both columns, set apart by a tint and a rule */
+/* Page header inside the card: spans both columns, set apart by a rule */
 .head {
   grid-column: 1 / -1;
   padding: 1.15rem 1.5rem;
-  background: linear-gradient(100deg, #eef3ff, #f7f9ff 60%, #ffffff);
+  background: #ffffff;
   border-bottom: 1px solid var(--jbl-border);
   border-radius: var(--jbl-radius) var(--jbl-radius) 0 0;
 }
