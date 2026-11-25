@@ -1,4 +1,4 @@
-import { PUBLIC_API_BASE_URL } from './api-config.mjs';
+import { PUBLIC_API_BASE_URL, PUBLIC_AUTH_BASE_URL } from './api-config.mjs';
 
 // Terms that must never reach the public portal. Apps only ever see merchant_id.
 export const BLOCKED = [
@@ -15,8 +15,13 @@ export const BLOCKED = [
 // Words that are allowed but should be reviewed (the public term is "merchant").
 export const WARN = [{ re: /\btenants?\b/i, why: 'prefer "merchant" in public text' }];
 
-// The configured API base URL is published on purpose, so it is not reported.
-const ALLOWED = [PUBLIC_API_BASE_URL, new URL(PUBLIC_API_BASE_URL).host];
+// The configured API and auth base URLs are published on purpose, so they are not reported.
+const ALLOWED = [
+  PUBLIC_API_BASE_URL,
+  new URL(PUBLIC_API_BASE_URL).host,
+  PUBLIC_AUTH_BASE_URL,
+  new URL(PUBLIC_AUTH_BASE_URL).host,
+];
 
 export function scan(text, label) {
   const errors = [];

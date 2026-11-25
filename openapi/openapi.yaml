@@ -117,7 +117,12 @@ paths:
 
         This endpoint is unauthenticated (no bearer token); the app
         authenticates itself with `client_id` + `client_secret` in the body.
+
+        It is served by the auth host, not the API gateway: call it at
+        `<auth host>/oauth/token` (see `servers` on this operation).
       operationId: issueAccessToken
+      servers:
+        - url: https://open-api-auth.qm-staging-k8s.jubelio.io
       security: []
       requestBody:
         required: true
@@ -4583,8 +4588,8 @@ components:
       flows:
         authorizationCode:
           authorizationUrl: https://app-store.jubelio.com
-          tokenUrl: /oauth/token
-          refreshUrl: /oauth/token
+          tokenUrl: https://open-api-auth.qm-staging-k8s.jubelio.io/oauth/token
+          refreshUrl: https://open-api-auth.qm-staging-k8s.jubelio.io/oauth/token
           scopes:
             category.read: Read categories and category mappings
             category.write: Manage categories and category mappings

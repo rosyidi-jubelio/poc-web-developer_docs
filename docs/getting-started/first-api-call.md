@@ -5,9 +5,11 @@ sidebar_position: 2
 
 # Your first API call
 
-The examples use a variable for the API base URL shown in the [API reference](/docs/api).
+The examples use two variables: the auth host, which issues tokens, and the API base URL shown in
+the [API reference](/docs/api).
 
 ```bash
+export JUBELIO_AUTH_BASE="https://open-api-auth.qm-staging-k8s.jubelio.io"
 export JUBELIO_API_BASE="https://poc-open-api.qm-staging-k8s.jubelio.io/openapi/v1"
 ```
 
@@ -17,7 +19,7 @@ After a merchant installs your app, your redirect URI receives a `code`. Exchang
 backend:
 
 ```bash
-curl -X POST "$JUBELIO_API_BASE/oauth/token" \
+curl -X POST "$JUBELIO_AUTH_BASE/oauth/token" \
   -H "Content-Type: application/json" \
   -d '{
     "grant_type": "authorization_code",

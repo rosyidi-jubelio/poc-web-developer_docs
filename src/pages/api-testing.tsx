@@ -21,6 +21,7 @@ type Operation = {
   summary: string;
   module: string;
   sub: string | null;
+  baseUrl: string | null;
   auth: boolean;
   parameters: Param[];
   body: string | null;
@@ -80,6 +81,7 @@ export default function ApiTesting(): ReactNode {
 
   const select = (next: Operation) => {
     setOp(next);
+    setBaseUrl(next.baseUrl ?? (proxy || tool.baseUrl));
     setValues({});
     setBody(next.body ?? '');
     setBodyError(null);

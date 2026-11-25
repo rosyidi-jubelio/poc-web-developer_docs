@@ -13,16 +13,17 @@ sequenceDiagram
   actor M as Merchant
   participant Store as Jubelio App Store
   participant App as Your backend
+  participant Auth as Jubelio auth
   participant API as Jubelio Open API
 
   M->>Store: Install your app, approve scopes
   Store-->>M: Redirect to your redirect URI with ?code=
   M->>App: GET redirect URI with code
-  App->>API: POST /oauth/token (code)
-  API-->>App: access_token, refresh_token, merchant_id
+  App->>Auth: POST /oauth/token (code)
+  Auth-->>App: access_token, refresh_token, merchant_id
   App->>API: API calls with access_token + merchant_id
-  App->>API: POST /oauth/token (refresh_token) when the access token expires
-  API-->>App: new access_token and refresh_token
+  App->>Auth: POST /oauth/token (refresh_token) when the access token expires
+  Auth-->>App: new access_token and refresh_token
 ```
 
 ## 1. Receive the authorization code
@@ -31,6 +32,13 @@ When a merchant installs your app, Jubelio redirects their browser to your redir
 `code` query parameter. The code is short lived and can be used once, so exchange it right away.
 
 ## 2. Exchange the code for tokens
+
+Tokens come from the auth host, not from the API base URL:
+
+| | Base URL |
+| --- | --- |
+| Auth (`POST /oauth/token`) | `https://open-api-auth.qm-staging-k8s.jubelio.io` |
+| Every other endpoint | `https://poc-open-api.qm-staging-k8s.jubelio.io/openapi/v1` |
 
 Call `POST /oauth/token` from your backend with `grant_type: authorization_code`, the `code`, your
 `client_id`, `client_secret` and `redirect_uri`. The response contains:

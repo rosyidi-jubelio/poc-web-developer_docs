@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
 import { scan } from './public-safety.mjs';
 import { MODULES, SUBMODULES, subLabel } from './api-modules.mjs';
-import { PUBLIC_API_BASE_URL } from './api-config.mjs';
+import { PUBLIC_API_BASE_URL, PUBLIC_AUTH_BASE_URL } from './api-config.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const committedFile = path.join(root, 'openapi', 'openapi.yaml');
@@ -51,6 +51,18 @@ const src = update
 
 const doc = YAML.parse(src.text);
 doc.servers = [{ url: PUBLIC_API_BASE_URL }];
+// Operations with their own servers are the auth host's (the token endpoint), so they and the
+// OAuth token URLs point at the public auth host.
+for (const item of Object.values(doc.paths ?? {})) {
+  for (const op of Object.values(item ?? {})) {
+    if (op && Array.isArray(op.servers)) op.servers = [{ url: PUBLIC_AUTH_BASE_URL }];
+  }
+}
+const oauthFlow = doc.components?.securitySchemes?.oauth2?.flows?.authorizationCode;
+if (oauthFlow) {
+  oauthFlow.tokenUrl = `${PUBLIC_AUTH_BASE_URL}/oauth/token`;
+  oauthFlow.refreshUrl = `${PUBLIC_AUTH_BASE_URL}/oauth/token`;
+}
 toPublic(doc);
 dropUnpublished(doc);
 const out = YAML.stringify(doc, { lineWidth: 0 });
@@ -201,6 +213,7 @@ async function writeTestingTool(doc, groups) {
           summary: op.summary ?? p,
           module: g.module.label,
           sub: g.sub?.label ?? null,
+          baseUrl: op.servers?.[0]?.url ?? null,
           auth: !(Array.isArray(op.security) && op.security.length === 0),
           scopes: scopesOf(op),
           parameters,

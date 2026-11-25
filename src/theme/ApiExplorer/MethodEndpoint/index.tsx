@@ -6,7 +6,14 @@ import Link from '@docusaurus/Link';
 import tool from '@site/spec/testing-tool.json';
 
 type Scope = {code: string; name: string};
-type Operation = {id: string; method: string; path: string; auth: boolean; scopes: Scope[]};
+type Operation = {
+  id: string;
+  method: string;
+  path: string;
+  baseUrl: string | null;
+  auth: boolean;
+  scopes: Scope[];
+};
 
 const operations = tool.operations as Operation[];
 
@@ -35,7 +42,7 @@ function CopyUrl({text}: {text: string}): ReactNode {
 export default function MethodEndpoint({method, path}: {method: string; path: string; context?: string}): ReactNode {
   if (method === 'event') return null;
   const op = operations.find((o) => o.method === method.toUpperCase() && o.path === path);
-  const url = `${tool.baseUrl.replace(/\/$/, '')}${path}`;
+  const url = `${(op?.baseUrl ?? tool.baseUrl).replace(/\/$/, '')}${path}`;
   return (
     <div className="jbl-endpoint-header">
       {op?.auth && (

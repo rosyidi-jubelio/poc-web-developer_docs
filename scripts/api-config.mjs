@@ -4,3 +4,10 @@
 export const DEFAULT_API_BASE_URL = 'https://poc-open-api.qm-staging-k8s.jubelio.io/openapi/v1';
 
 export const PUBLIC_API_BASE_URL = process.env.PUBLIC_API_BASE_URL || DEFAULT_API_BASE_URL;
+
+// The token endpoint (POST /oauth/token) lives on its own auth host, not on the API gateway.
+// Override with PUBLIC_AUTH_BASE_URL at build time.
+// Temporary: points at the staging environment until the production host is ready.
+export const DEFAULT_AUTH_BASE_URL = 'https://open-api-auth.qm-staging-k8s.jubelio.io';
+
+export const PUBLIC_AUTH_BASE_URL = process.env.PUBLIC_AUTH_BASE_URL || DEFAULT_AUTH_BASE_URL;
